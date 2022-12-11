@@ -6,6 +6,8 @@ using Rhino.Input.Custom;
 using Rhino.PlugIns;
 using Rhino.UI;
 using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using SD = System.Drawing;
 
@@ -46,6 +48,7 @@ public class AutoCameraTargetPlugin : PlugIn
 
 internal class AutoCameraTargetListener : MouseCallback
 {
+    private Stopwatch? sw;
     public Line line = new Line ();
     public Point3d targetPoint = Point3d.Origin;
 
@@ -58,7 +61,12 @@ internal class AutoCameraTargetListener : MouseCallback
         AutoCameraTargetPlugin.Conduit.ViewportFilter = e.View.ActiveViewportID;
         AutoCameraTargetPlugin.Conduit.InRotation = true;
 
+        sw ??= new Stopwatch ();
+        sw.Restart ();
         targetPoint = _GetCenter (e.View.Document, _GetMouseRay ());
+        RhinoApp.WriteLine ("Get Point "+sw.ElapsedMilliseconds+"ms");
+        sw.Stop();
+
         RhinoDoc.ActiveDoc.Views.ActiveView.ActiveViewport.SetCameraTarget (
             targetPoint,
             updateCameraLocation: false
@@ -82,8 +90,20 @@ internal class AutoCameraTargetListener : MouseCallback
 
     private Point3d _GetCenter (RhinoDoc doc, Ray3d ray)
     {
+        var rayPos = new double[]
+        {
+            ray.Position.X,
+            ray.Position.Y,
+            ray.Position.Z
+        };
+        var rayInvDir = new double[]
+        {
+            ray.Direction.X == 0 ? double.NegativeInfinity : 1/ray.Direction.X,
+            ray.Direction.Y == 0 ? double.NegativeInfinity : 1/ray.Direction.Y,
+            ray.Direction.Z == 0 ? double.NegativeInfinity : 1/ray.Direction.Z
+        };
+
         BoundingBox bbox;
-        Mesh bmesh;
         double d;
         double min = 1.1;
         double gMin = 1.1;
@@ -95,16 +115,14 @@ internal class AutoCameraTargetListener : MouseCallback
             bbox = obj.Geometry.GetBoundingBox (accurate: false);
             if (bbox.IsValid == false) continue;
 
-            // Does not work on plane objects.
-            bmesh = Mesh.CreateFromBox (bbox, 1, 1, 1);
-            // So...
-            if (bmesh == null) bmesh = _GetBBoxMesh (bbox);
-            // Here, bmesh.IsValid == false, it does not matter for the intersection.
-
-            d = Rhino.Geometry.Intersect.Intersection.MeshRay (bmesh, ray);
+            d = RayBoxIntersection (rayPos, rayInvDir, bbox);
             if (d < 0) continue;
 
-            meshes = obj.GetMeshes (MeshType.Default);
+            // `obj.GetMeshes(MeshType.Default)` does not return meshes for block instances.
+            meshes = (from oref in Rhino.DocObjects.RhinoObject.GetRenderMeshes (new Rhino.DocObjects.RhinoObject[] { obj }, true, false)
+                      let m = oref.Mesh ()
+                      where m != null
+                      select m).ToArray ();
 
             // If the object has no mesh, we memorize the intersection of the box
             if (meshes.Length == 0)
@@ -131,6 +149,9 @@ internal class AutoCameraTargetListener : MouseCallback
         );
     }
 
+    /**
+     * Cette fonction est un peu plus rapide que `Mesh.CreateFromBox (bbox, 1, 1, 1);`
+     */
     Mesh _GetBBoxMesh (BoundingBox bbox)
     {
 
@@ -176,6 +197,55 @@ internal class AutoCameraTargetListener : MouseCallback
         mesh.Normals.ComputeNormals ();
         return mesh;
     }
+
+    private double RayBoxIntersection (double[] r_origin, double[] r_dir_inv, BoundingBox b)
+    // https://tavianator.com/2011/ray_box.html
+    // https://tavianator.com/2015/ray_box_nan.html
+    {
+        double t;
+        double t1 = (b.Min.X - r_origin[0]) * r_dir_inv[0];
+        double t2 = (b.Max.X - r_origin[0]) * r_dir_inv[0];
+
+        double tmin = t1 < t2 ? t1 : t2; // min (t1, t2);
+        double tmax = t1 > t2 ? t1 : t2; // max (t1, t2);
+
+
+        t1 = (b.Min.Y - r_origin[1]) * r_dir_inv[1];
+        t2 = (b.Max.Y - r_origin[1]) * r_dir_inv[1];
+        if (t1 > t2)
+        {
+            t = t2;
+            t2 = t1;
+            t1 = t;
+        }
+
+        tmin = tmin > t1 ? tmin : t1; // max (tmin, min (t1, t2));
+        tmax = tmax < t2 ? tmax : t2; // min (tmax, max (t1, t2));
+
+
+        t1 = (b.Min.Z - r_origin[2]) * r_dir_inv[2];
+        t2 = (b.Max.Z - r_origin[2]) * r_dir_inv[2];
+        if (t1 > t2)
+        {
+            t = t2;
+            t2 = t1;
+            t1 = t;
+        }
+
+        tmin = tmin > t1 ? tmin : t1; // max (tmin, min (t1, t2));
+        tmax = tmax < t2 ? tmax : t2; // min (tmax, max (t1, t2));
+
+        //return tmin; // tmax == tmin in case of flat box
+        if (tmax >= (tmin > 0 ? tmin : 0)) // tmax > max (tmin, 0.0);
+        {
+            return tmin < 0 ? tmax : tmin;
+            // return tmin;
+        }
+        else
+        {
+            return -1;
+        }
+    }
 }
 
 
@@ -188,8 +258,9 @@ class AutoCameraTargetConduit : DisplayConduit
     {
         if (InRotation == false || e.Viewport.Id != ViewportFilter) return;
         e.Display.DrawPoint (AutoCameraTargetPlugin.Listener.targetPoint, PointStyle.RoundActivePoint, 3, SD.Color.Black);
-        // Dbg
-        // e.Display.DrawLine (AutoCameraTargetPlugin.Listener.line, SD.Color.BlueViolet);
+        #if DEBUG
+        e.Display.DrawLine (AutoCameraTargetPlugin.Listener.line, SD.Color.BlueViolet);
+        #endif
     }
 }
 
