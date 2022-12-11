@@ -1,6 +1,7 @@
 ﻿
 /obj
 /bin
+/doc
 
 *.url
 *.svg
