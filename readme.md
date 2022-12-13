@@ -37,6 +37,7 @@ Le mode débogage permet de visualiser l'intersection entre le curseur de la sou
 Cela aide à comprendre comment fonctionne le calcul.
 
 activé l'option `marker` et `debug`
+
 ![Toggle debug mode](./doc/cmd-debug.png)
 
 <table>
