@@ -1,4 +1,5 @@
-﻿
+﻿English version : https://discourse.mcneel.com/t/ctrl-shift-rmb-as-default
+
 En attendant la version 8 et l'option `Rhino.Options.View.RotateViewAroundObjectAtMouseCursor`,
 Voici un plugin qui positionne la cible de la caméra sur l'objet sous la souris afin d'interpréter le comportement `Ctrl+Shift+RMB`.
 
