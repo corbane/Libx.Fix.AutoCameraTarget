@@ -1,0 +1,7 @@
+---
+name: AutoCameraTarget
+version: 1.2.0
+authors:
+- Vrecq Jean-marie
+description: this plugin interpret the `Ctrl+Shift+RMB` keys as the default navigation behavior.
+url: https://github.com/corbane/Libx.Fix.AutoCameraTarget

@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <Title>AutoCameraTarget</Title>
-        <Version>1.1.0</Version>
+        <AssemblyTitle>AutoCameraTarget</AssemblyTitle>
+        <Version>1.2.0</Version>
         <Description>this plugin interpret the `Ctrl+Shift+RMB` keys as the default navigation behavior.</Description>
     </PropertyGroup>
-
+    
     <PropertyGroup>
         <TargetFramework>net48</TargetFramework>
         <LangVersion>11</LangVersion>
@@ -22,14 +22,25 @@
 
     <PropertyGroup>
         <OutputType>Library</OutputType>
-        <DebugType>portable</DebugType>
         <TargetExt>.rhp</TargetExt>
     </PropertyGroup>
 
-    <PropertyGroup Condition="$(Configuration) == 'Debug' AND $([MSBuild]::IsOSPlatform(Windows))">
+    <PropertyGroup Condition="$(Configuration) == 'Debug'">
+        <DebugType>portable</DebugType>
         <StartProgram>C:\Program Files\Rhino 7\System\Rhino.exe</StartProgram>
         <StartArguments></StartArguments>
         <StartAction>Program</StartAction>
     </PropertyGroup>
   
+    <PropertyGroup Condition="$(Configuration) == 'Release'">
+        <OutDir>yak\$(Version)</OutDir>
+    </PropertyGroup>
+    
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="$(Configuration) == 'Release'">
+        <Exec Command="echo Generate Yak package: $(Version)" />
+        <Delete Files="$(ProjectDir)$(OutDir)manifest.yml" />
+        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command='"C:\Program Files\Rhino 7\System\Yak.exe" spec' />
+        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command='"C:\Program Files\Rhino 7\System\Yak.exe" build' />
+    </Target>
+
 </Project>
