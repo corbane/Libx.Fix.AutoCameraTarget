@@ -7,7 +7,7 @@ Installation
 ------------
 
 
-Ce plugin est sur le serveur Yak et s'appelle `AutoCameraTarget`
+Ce plugin est sur le serveur Yak et s'appelle `AutoCameraTarget` (La version actuelle est la 1.2).
 
 ![Toggle debug mode](./doc/yak.png)
 
@@ -90,14 +90,18 @@ activé l'option `marker` et `debug`
 </table>
 
 
-Todo / Issues
--------------
+Performance / Todo / Issues
+---------------------------
 
+A partir de 50/60 mille objets visibles dans la vue, le calcul de l'intersection prend entre 100ms à 200ms selon l'ordinateur et le type d'objets.
+Ce delai commence a être resentis pendant la naviguation.
+
+Mention spéciale sur les objets SubD:
+La fonction qui récupère les maillages d'objets est `RhinoObject.GetRenderMeshes`.
+Son comportement est étrange avec les SubD : https://discourse.mcneel.com/t/rhinoobject-getrendermeshes-bug
+Cela peut rendre l'utilisation de ce plugin désagréable lorsqu'il y a beaucoup d'objets de type SubD.
 
 Actuellement, si un objet est partiellement visible, toute cette boîte englobante est utilisée pour le calcul de l'intersection. Pour les grands objets avec une très petite partie visible, cela peut entraîner une rotation excessive de la caméra.
 peut-être est-il possible de limiter la boîte englobante de l'objet à la zone visible de l'écran...
 
 
-La fonction qui récupère les maillages d'objets est `RhinoObject.GetRenderMeshes`.
-Son comportement est étrange avec les SubD : https://discourse.mcneel.com/t/rhinoobject-getrendermeshes-bug
-Cela peut rendre l'utilisation de ce plugin désagréable lorsqu'il y a beaucoup d'objets de type SubD.
