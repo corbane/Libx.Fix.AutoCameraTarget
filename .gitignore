@@ -1,8 +1,14 @@
 ﻿
 /obj
 /bin
-/doc
 
 *.url
 *.svg
 *.sketch
+
+/doc/_*
+/doc/.*
+/doc/*.3dm*
+/doc/*.gh
+/doc/*.csx
+/doc/*.mp4
