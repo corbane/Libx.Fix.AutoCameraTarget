@@ -6,6 +6,7 @@
 *.svg
 *.sketch
 
+/csx/
 /doc/_*
 /doc/.*
 /doc/*.3dm*

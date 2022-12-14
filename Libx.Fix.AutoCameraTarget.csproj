@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <AssemblyTitle>AutoCameraTarget</AssemblyTitle>
-        <Version>1.2.0</Version>
+        <Version>1.2.1</Version>
         <Description>this plugin interpret the `Ctrl+Shift+RMB` keys as the default navigation behavior.</Description>
     </PropertyGroup>
     
@@ -18,6 +18,12 @@
   
     <ItemGroup>
         <Reference Private="False" Include="RhinoCommon" HintPath="C:\Program Files\Rhino 7\System\RhinoCommon.dll" />
+    </ItemGroup>
+  
+    <ItemGroup>
+      <None Update="viewmode.ini">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
     <PropertyGroup>
@@ -39,8 +45,8 @@
     <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="$(Configuration) == 'Release'">
         <Exec Command="echo Generate Yak package: $(Version)" />
         <Delete Files="$(ProjectDir)$(OutDir)manifest.yml" />
-        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command='"C:\Program Files\Rhino 7\System\Yak.exe" spec' />
-        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command='"C:\Program Files\Rhino 7\System\Yak.exe" build' />
+        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command="&quot;C:\Program Files\Rhino 7\System\Yak.exe&quot; spec" />
+        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command="&quot;C:\Program Files\Rhino 7\System\Yak.exe&quot; build" />
     </Target>
 
 </Project>

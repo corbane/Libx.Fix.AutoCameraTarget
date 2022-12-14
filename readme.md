@@ -47,8 +47,7 @@ activé l'option `marker` et `debug`
     <td> <img src="./doc/OnMesh.png" width="300px" />
 
 <tr>
-    <td> fonctionne sur tous types d'objets. <br/> 
-         Ici, les arbres sont des fichiers liés en tant qu'instance de blocs. <br/>
+    <td> Ici, les arbres sont des fichiers liés en tant qu'instance de blocs. <br/>
          Mise en garde concernant les SubD, voir plus bas.
     <td> <img src="./doc/OnMesh-block.png"  width="300px" />
 
@@ -93,9 +92,6 @@ activé l'option `marker` et `debug`
 
 Performance / Todo / Issues
 ---------------------------
-
-A partir de 50/60 mille objets visibles dans la vue, le calcul de l'intersection prend entre 100ms à 200ms selon l'ordinateur et le type d'objets.
-Ce delai commence a être resentis pendant la naviguation.
 
 Mention spéciale sur les objets SubD:
 La fonction qui récupère les maillages d'objets est `RhinoObject.GetRenderMeshes`.
