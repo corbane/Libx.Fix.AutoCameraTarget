@@ -45,6 +45,7 @@
     
     <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="$(Configuration) == 'Release'">
         <Copy SourceFiles="manifest.yml" DestinationFolder="$(OutDir)" />
+        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command='"C:\Program Files\Rhino 7\System\Yak.exe" build' />
     </Target>
 
 </Project>
