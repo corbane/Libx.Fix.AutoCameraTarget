@@ -1,8 +1,15 @@
-﻿
+﻿#define WIN32
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.IO;
 using SD = System.Drawing;
+
+using ED = Eto.Drawing;
+using EF = Eto.Forms;
 
 using Rhino.Geometry;
 using RP = Rhino.PlugIns;
@@ -14,6 +21,17 @@ using RhinoDoc = Rhino.RhinoDoc;
 using RhinoApp = Rhino.RhinoApp;
 
 
+/*/
+
+███    ███  █████  ██ ███    ██ 
+████  ████ ██   ██ ██ ████   ██ 
+██ ████ ██ ███████ ██ ██ ██  ██ 
+██  ██  ██ ██   ██ ██ ██  ██ ██ 
+██      ██ ██   ██ ██ ██   ████ 
+ 
+/*/
+
+
 #if RHP
 
 [assembly: System.Runtime.InteropServices.Guid ("45d93b79-52d5-4ee8-bfba-ee4816bf0080")]
@@ -21,6 +39,7 @@ using RhinoApp = Rhino.RhinoApp;
 [assembly: RP.PlugInDescription (RP.DescriptionType.Country, "France")]
 [assembly: RP.PlugInDescription (RP.DescriptionType.Organization, "Vrecq Jean-marie")]
 [assembly: RP.PlugInDescription (RP.DescriptionType.WebSite, "https://github.com/corbane/Libx.Fix.AutoCameraTarget")]
+[assembly: RP.PlugInDescription (RP.DescriptionType.Icon, "Libx.Fix.AutoCameraTarget.EmbeddedResources.RotateArround.ico")]
 
 
 namespace Libx.Fix.AutoCameraTarget;
@@ -38,206 +57,55 @@ public class AutoCameraTargetCommand : RC.Command
     {
         return Main.Instance.RunToggleCommand (doc);
     }
+
+}
+
+
+static class Resources
+{
+    static Stream _Get (string ressource) => typeof (Resources).Assembly.GetManifestResourceStream (ressource);
+    static string _rscpath = "Libx.Fix.AutoCameraTarget.EmbeddedResources.";
+    
+    static SD.Bitmap? _hand;
+    static SD.Bitmap? _zoom;
+    static SD.Bitmap? _rotatation;
+
+    public static SD.Bitmap HandBitmap            => _hand ??= new SD.Bitmap (_Get (_rscpath + "Hand.png"));
+    public static SD.Bitmap MagnifyingGlassBitmap => _zoom ??= new SD.Bitmap (_Get (_rscpath + "MagnifyingGlass.png"));
+    public static SD.Bitmap RotationBitmap        => _rotatation ??= new SD.Bitmap (_Get (_rscpath + "Rotation.png"));
+}
+
+#else
+
+static class Resources
+{
+    static string _ressourceDiectory = @"E:\Projet\Rhino\Libx\Libx.Fix.AutoCameraTarget\EmbeddedResources";
+    // static string _ressourceDiectory = Path.Combine (Path.GetDirectoryName (typeof (Resources).Assembly.Location), "..", "EmbeddedResources");
+    
+    static SD.Bitmap? _hand;
+    static SD.Bitmap? _zoom;
+    static SD.Bitmap? _rotatation;
+
+    public static SD.Bitmap HandBitmap            => _hand ??= new (Path.Combine (_ressourceDiectory, "Hand.png"));
+    public static SD.Bitmap MagnifyingGlassBitmap => _zoom ??= new (Path.Combine (_ressourceDiectory, "MagnifyingGlass.png"));
+    public static SD.Bitmap RotationBitmap        => _rotatation ??= new (Path.Combine (_ressourceDiectory, "Rotation.png"));
 }
 
 #endif
 
 
-interface IRotationCallback
-{
-    public bool OnStartRotation (RD.RhinoViewport viewport, SD.Point viewportPoint);
-    public void OnRotation (int offsetX, int offsetY);
-    public void OnStopRotation ();
-}
-
-
-/// <summary>
-/// Wrapper class above <see cref="MouseListener"/>
-/// </summary>
-class MouseDownListener : RUI.MouseCallback
-{
-    IRotationCallback _callbacks;
-
-    public MouseDownListener (IRotationCallback callback) { _callbacks = callback; }
-
-    protected override void OnEndMouseDown (RUI.MouseCallbackEventArgs e)
-    {
-        if (e.MouseButton != RUI.MouseButton.Right || e.CtrlKeyDown || e.ShiftKeyDown || e.View.ActiveViewport.IsPlanView) return;
-
-        MouseListener.Instance.Start (e.View.ActiveViewport, e.ViewportPoint, _callbacks);
-    }
-}
-
-
-class MouseListener : RUI.MouseCallback
-{
-    static MouseListener? g_instance;
-    public static MouseListener Instance => g_instance ??= new ();
-
-    #nullable disable
-    MouseListener () { /*private constructor*/ }
-    #nullable enable
-
-    /// <summary>
-    /// Flag to cancel or not the MouseUp event.
-    /// </summary>
-    bool _inrotation;
-
-    IRotationCallback _callbacks;
-    RD.RhinoViewport _viewport;
-    SD.Point _startPoint;
-
-    public void Start (RD.RhinoViewport viewport, SD.Point viewportPoint, IRotationCallback callbacks)
-    {
-        _inrotation = false;
-        _callbacks = callbacks;
-        _viewport = viewport;
-        _startPoint = viewportPoint;
-        Enabled = true;
-    }
-
-    protected override void OnMouseMove (RUI.MouseCallbackEventArgs e)
-    {
-        if (e.View.ActiveViewportID != _viewport.Id) return;
-
-        if (_inrotation == false)
-        {
-            _inrotation = true;
-            Enabled = _callbacks.OnStartRotation (_viewport, _startPoint);
-            if (Enabled) e.Cancel = true;
-        }
-        else
-        {
-            var offsetX = e.ViewportPoint.X - _startPoint.X;
-            var offsetY = e.ViewportPoint.Y - _startPoint.Y;
-            _callbacks.OnRotation (offsetX, offsetY);
-            e.Cancel = true;
-        }
-    }
-
-    protected override void OnMouseUp (RUI.MouseCallbackEventArgs e)
-    {
-        Enabled = false;
-        if (_inrotation == false) return;
-        _callbacks.OnStopRotation ();
-        e.Cancel = true;
-    }
-}
-
-
-class GetRhinoMouseOffset
-// Obsoléte !
-// Pas de chance, aprés avoir trouvé une solution pour optenir la décalage de la souris l'orsqu'elle peut passer d'un bord à l'autre,
-// (ce qui est le comportement de la souris dans Rhino pendant une rotation)
-// j'ai pu constater que l'appelle à `MouseCallbackEventArgs.Cancel = true` annulais cet effet.
-// Mais c'était tellement ... que je garde le code.
-{
-    SD.Point _startPoint;
-    SD.Point _lastPoint;
-    SD.Point _offsetPoint;
-    SD.Rectangle _viewportBounds;
-
-    int _lastDirX;
-    int _lastSideX;
-    int _loopX;
-    int _lastDirY;
-    int _lastSideY;
-    int _loopY;
-
-    public void Start (RD.RhinoViewport viewport, SD.Point viewportPoint)
-    {
-        _startPoint = viewportPoint;
-        _lastPoint.X = viewportPoint.X;
-        _lastPoint.Y = viewportPoint.Y;
-        _offsetPoint.X = 0;
-        _offsetPoint.Y = 0;
-        _viewportBounds = viewport.Bounds;
-
-        _lastDirX = 0;
-        _lastSideX = 1;
-        _loopX = 0;
-        _lastDirY = 0;
-        _lastSideY = 1;
-        _loopY = 0;
-    }
-
-    public void Compute (SD.Point currentPoint)
-    {
-        var currentSideX = currentPoint.X < _startPoint.X ? -1
-                         : currentPoint.X > _startPoint.X ? 1
-                         : 0;
-
-        if (_lastDirX != _lastSideX)
-        {
-            _lastDirX = _lastPoint.X < currentPoint.X ? 1 : -1;
-        }
-        else if (currentSideX < 0 && _startPoint.X <= _lastPoint.X)
-        {
-            //RhinoApp.WriteLine ("flip to left");
-            _loopX++;
-            _lastDirX = 1;
-        }
-        else if (0 < currentSideX && _lastPoint.X <= _startPoint.X)
-        {
-            //RhinoApp.WriteLine ("flip to right");
-            _loopX--;
-            _lastDirX = -1;
-        }
-        else
-        {
-            _lastDirX = _lastPoint.X < currentPoint.X ? 1 : -1;
-        }
-
-        _offsetPoint.X = _viewportBounds.Width * _loopX + (currentPoint.X - _startPoint.X);
-        _lastSideX = currentSideX;
-        _lastPoint.X = currentPoint.X;
-        //RhinoApp.WriteLine ($" side: {(_lastSideX < 0 ? "-1" : "+1")} dirX: {(_lastDirX < 0 ? "-1" : "+1")} loopX: {_loopX} offsetX: { _offsetPoint.X }");
-
-
-        var currentSideY = currentPoint.Y < _startPoint.Y ? -1
-                         : currentPoint.Y > _startPoint.Y ? 1
-                         : 0;
-
-        if (_lastDirY != _lastSideY)
-        {
-            _lastDirY = _lastPoint.Y < currentPoint.Y ? 1 : -1;
-        }
-        else if (currentSideY < 0 && _startPoint.Y <= _lastPoint.Y)
-        {
-            //RhinoApp.WriteLine ("flip to top");
-            _loopY++;
-            _lastDirY = 1;
-        }
-        else if (0 < currentSideY && _lastPoint.Y <= _startPoint.Y)
-        {
-            //RhinoApp.WriteLine ("flip to bottom");
-            _loopY--;
-            _lastDirY = -1;
-        }
-        else
-        {
-            _lastDirY = _lastPoint.Y < currentPoint.Y ? 1 : -1;
-        }
-
-        _offsetPoint.Y = _viewportBounds.Height * _loopY + (currentPoint.Y - _startPoint.Y);
-        _lastSideY = currentSideY;
-        _lastPoint.Y = currentPoint.Y;
-        //RhinoApp.WriteLine ($" sideY: {(_lastSideY < 0 ? "-1" : "+1")} dirY: {(_lastDirY < 0 ? "-1" : "+1")} loopY: {_loopY} offsetY: { _offsetPoint.Y }");
-    }
-}
-
-
-public class Main : IRotationCallback
+public class Main
 {
     static Main? g_instance;
     public static Main Instance => g_instance ??= new ();
 
-    MouseDownListener _listener;
+    NavigationListener _listener;
+    NavigationController _navigator;
 
     Main ()
     {
-        _listener = new (this);
-        _data = new ();
+        _navigator = new ();
+        _listener = new (_navigator);
     }
 
     public bool Active
@@ -245,15 +113,18 @@ public class Main : IRotationCallback
         get => _listener.Enabled;
         set { _listener.Enabled = value; }
     }
-    public bool Marker { get; private set; } = true;
-    public bool Debug
+
+    public bool Marker
     {
-        get => _data.Debug;
-        set { _data.Debug = value; }
+        get => _navigator.Data.ShowMarker;
+        set { _navigator.Data.ShowMarker = value; }
     }
 
-    Plane _cameraPlane;
-    IntersectionData _data;
+    public bool Debug
+    {
+        get => _navigator.Data.Debug;
+        set { _navigator.Data.Debug = value; }
+    }
 
     public RC.Result RunToggleCommand (RhinoDoc doc)
     {
@@ -268,14 +139,12 @@ public class Main : IRotationCallback
         {
             go.ClearCommandOptions ();
             go.AddOptionToggle ("active", ref active);
-            if (Active) go.AddOptionToggle ("marker", ref marker);
-            if (Active && Marker) go.AddOptionToggle ("debug", ref debug);
+            if (active.CurrentValue) go.AddOptionToggle ("marker", ref marker);
+            if (active.CurrentValue && Marker) go.AddOptionToggle ("debug", ref debug);
 
             var ret = go.Get ();
             if (ret == Rhino.Input.GetResult.Option)
             {
-                Active = active.CurrentValue;
-
                 marker.CurrentValue = active.CurrentValue && marker.CurrentValue;
                 if (marker.CurrentValue != Marker)
                 {
@@ -288,65 +157,26 @@ public class Main : IRotationCallback
                 continue;
             }
 
+            Active = active.CurrentValue;
+
             return ret == Rhino.Input.GetResult.Cancel
                  ? RC.Result.Cancel
                  : RC.Result.Success;
 
         }
     }
-
-    public bool OnStartRotation (RD.RhinoViewport viewport, SD.Point viewportPoint)
-    {
-        _data.Viewport = viewport;
-        _data.ViewportPoint = viewportPoint;
-        viewport.GetCameraFrame (out _cameraPlane);
-
-        if (_data.Debug)
-        {
-            MouseIntersector.StartPerformenceLog ();
-            MouseIntersector.UpdatePoint (ref _data);
-            MouseIntersector.StopPerformenceLog (_data);
-        }
-        else
-        {
-            MouseIntersector.UpdatePoint (ref _data);
-        }
-
-        if (_data.Status == IntersectionStatus.None) 
-            return false;
-
-        viewport.SetCameraTarget (_data.TargetPoint, updateCameraLocation: false);
-        if (Marker) InfoConduit.Show (_data);
-        return true;
-    }
-
-    public void OnRotation (int offsetX, int offsetY)
-    {
-        var pos = new Point3d (_cameraPlane.Origin);
-        var dir = new Vector3d (-_cameraPlane.ZAxis);
-        var up = new Vector3d (_cameraPlane.YAxis);
-
-        var t
-            = Transform.Rotation (-Math.PI * offsetX / 400, Vector3d.ZAxis, _data.TargetPoint)
-            * Transform.Rotation (-Math.PI * offsetY / 400, _cameraPlane.XAxis, _data.TargetPoint)
-            ;
-
-        pos.Transform (t);
-        dir.Transform (t);
-        up.Transform (t);
-
-        _data.Viewport.SetCameraLocation (pos, true);
-        _data.Viewport.SetCameraDirection (dir, true);
-        _data.Viewport.CameraUp = up;
-        _data.Viewport.ParentView.Redraw ();
-    }
-
-    public void OnStopRotation ()
-    {
-        InfoConduit.Hide ();
-        _data.Viewport.ParentView.Redraw ();
-    }
 }
+
+
+/*/
+
+██ ███    ██ ████████ ███████ ██████  ███████ ███████  ██████ ████████ ██  ██████  ███    ██ 
+██ ████   ██    ██    ██      ██   ██ ██      ██      ██         ██    ██ ██    ██ ████   ██ 
+██ ██ ██  ██    ██    █████   ██████  ███████ █████   ██         ██    ██ ██    ██ ██ ██  ██ 
+██ ██  ██ ██    ██    ██      ██   ██      ██ ██      ██         ██    ██ ██    ██ ██  ██ ██ 
+██ ██   ████    ██    ███████ ██   ██ ███████ ███████  ██████    ██    ██  ██████  ██   ████ 
+
+/*/
 
 
 enum IntersectionStatus
@@ -386,6 +216,7 @@ class IntersectionData
 
     public SD.Point ViewportPoint;
 
+    public bool ShowMarker = false;
     public bool Debug;
 
 
@@ -433,10 +264,36 @@ class IntersectionData
     /// The target point of the camera
     /// </summary>
     public Point3d TargetPoint;
+
+    public Point3d GetCameraFrontTargetPoint ()
+    { // Same as _data.GetFrustrumNearPoint (_data.ViewportPoint)
+
+        Viewport.GetFrustumNearPlane (out var nearPlane);
+
+        var shootLine = new Line(Viewport.CameraLocation, TargetPoint);
+        Rhino.Geometry.Intersect.Intersection.LinePlane (shootLine, nearPlane, out var t);
+        return Viewport.IsParallelProjection
+                ? nearPlane.ClosestPoint (TargetPoint)
+                : shootLine.PointAt (t);
+    }
+
+    public Point3d GetCameraFrontPoint (SD.Point clientPoint)
+    {
+        // Ca c'est le point 3d sur FrustumNearPlane
+        var s2w = Viewport.GetTransform (Rhino.DocObjects.CoordinateSystem.Screen, Rhino.DocObjects.CoordinateSystem.World);
+        var point = new Point3d (clientPoint.X, clientPoint.Y, 0);
+        point.Transform (s2w);
+        return point;
+    }
+
+    public Vector3d GetCameraFrontVector (SD.Point clientPoint)
+    {
+        return GetCameraFrontPoint (clientPoint) - GetCameraFrontPoint (ViewportPoint);
+    }
 }
 
 
-static class MouseIntersector
+static class Intersector
 {
     readonly static Rhino.DocObjects.ObjectEnumeratorSettings _enumeratorSettings = new ()
     {
@@ -466,7 +323,7 @@ static class MouseIntersector
         return new Ray3d (line.To, line.From - line.To);
     }
 
-    public static void UpdatePoint (ref IntersectionData data)
+    public static void Compute (IntersectionData data, Point3d? defaultTargetPoint = null)
     {
         var ray = _GetMouseRay (data.Viewport);
         data.Rayline = ray;
@@ -579,7 +436,7 @@ static class MouseIntersector
         if (visiblebbox.IsValid == false)
         {
             data.Status = IntersectionStatus.None;
-            data.TargetPoint = Point3d.Unset;
+            data.TargetPoint = defaultTargetPoint ?? Point3d.Unset;
             return;
         }
 
@@ -790,6 +647,565 @@ class InfoConduit : RD.DisplayConduit
 }
 
 
+/*/
+
+
+███    ██  █████  ██    ██ ██  ██████   █████  ████████ ██  ██████  ███    ██ 
+████   ██ ██   ██ ██    ██ ██ ██       ██   ██    ██    ██ ██    ██ ████   ██ 
+██ ██  ██ ███████ ██    ██ ██ ██   ███ ███████    ██    ██ ██    ██ ██ ██  ██ 
+██  ██ ██ ██   ██  ██  ██  ██ ██    ██ ██   ██    ██    ██ ██    ██ ██  ██ ██ 
+██   ████ ██   ██   ████   ██  ██████  ██   ██    ██    ██  ██████  ██   ████ 
+
+/*/
+
+
+struct Vec
+{
+    public int X;
+    public int Y;
+
+    public Vec (int x, int y) { X = x; Y = y; }
+    public Vec (SD.Point point) { X = point.X; Y = point.Y; }
+
+    public Vec Copy () { return new (X, Y); }
+
+    public Vec Set (int value)      { X = value; Y = value; return this; }
+    public Vec Set (int x, int y)   { X = x; Y = y; return this; }
+    public Vec Set (Vec point)    { X = point.X; Y = point.Y; return this; }
+    public Vec Set (SD.Point point) { X = point.X; Y = point.Y; return this; }
+
+    public Vec Add (Vec point)    { X += point.X; Y += point.Y; return this; }
+    public Vec Add (SD.Point point) { X += point.X; Y += point.Y; return this; }
+
+    public Vec Substract (Vec point)    { X -= point.X; Y -= point.Y; return this; }
+    public Vec Substract (SD.Point point) { X -= point.X; Y -= point.Y; return this; }
+
+    public static Vec operator +(Vec a, Vec b) { return new Vec(a.X + b.X, a.Y + b.Y); }
+
+    public bool Is (int value) {return X == 0 && Y == 0; }
+
+    public override string ToString () { return $"[{X}, {Y}]"; }
+}
+
+
+enum NavigationMode
+{
+    Rotate,
+    Translate,
+    Zoom
+}
+
+
+class NavigationCallback
+{
+    public virtual bool OnStartNavigation (RD.RhinoViewport viewport, Vec viewportPoint) { return true; }
+    public virtual bool OnNavigationModeChange (NavigationMode mode) { return true; }
+    public virtual void OnRotation (Vec offset) { /**/ }
+    public virtual void OnZoom (Vec offset) { /**/ }
+    public virtual void OnTranslation (Vec offset) { /**/ }
+    public virtual void OnStopNavigation () { /**/ }
+}
+
+
+/// <summary>
+/// Wrapper class above <see cref="MouseListener"/>
+/// </summary>
+class NavigationListener : RUI.MouseCallback
+{
+    NavigationCallback _callbacks;
+    MouseListener _listener;
+
+    public NavigationListener (NavigationCallback callback)
+    {
+        _callbacks = callback;
+        _listener = new MouseListener ();
+    }
+
+    protected override void OnEndMouseDown (RUI.MouseCallbackEventArgs e)
+    {
+        // if (e.MouseButton != RUI.MouseButton.Right || e.CtrlKeyDown || e.ShiftKeyDown || e.View.ActiveViewport.IsPlanView) return;
+        if (e.MouseButton != RUI.MouseButton.Right || e.View.ActiveViewport.IsPlanView) return;
+
+        _listener.Start (e, _callbacks);
+    }
+}
+
+
+static class NavigationCursor
+{
+    #if WIN32
+
+    [DllImport("user32.dll")]
+    static extern int ShowCursor(bool bShow);
+
+    static int _ccount = int.MaxValue;
+    public static void HideCursor ()
+    {
+        while (_ccount >= 0) _ccount = ShowCursor (false);
+        return;
+    }
+
+    public static void ShowCursor ()
+    {
+        while (_ccount > 0) _ccount = ShowCursor (false);
+        while (_ccount < 1) _ccount = ShowCursor (true);
+        return;
+    }
+    
+    #endif
+    
+    /// <summary>
+    /// Viewport point when the mouse button is down.
+    /// </summary>
+    static Vec _initiaCursorPos;
+
+    static Vec _vCursorOffset;
+
+    static SD.Rectangle _clientArea;
+
+    /// <summary>
+    /// Cursor position with <see cref="NavigationMode.Translate"/> offsets.
+    /// </summary>
+    public static Vec VirtualCursorOffset => _vCursorOffset;
+
+    public static Vec InitialCursorPosition => _initiaCursorPos;
+
+    public static Vec VirtualCursorPosition => _initiaCursorPos + _vCursorOffset;
+
+    public static void InitCursor (RD.RhinoViewport viewport, Vec position)
+    {
+        _initiaCursorPos = position.Copy ();
+        _clientArea = viewport.ParentView.ScreenRectangle;
+        _vCursorOffset = new (0,0);
+    }
+
+    public static void SetCursorPosition (Vec pos)
+    {
+        EF.Mouse.Position = new (_clientArea.X + pos.X, _clientArea.Y + pos.Y);
+    }
+
+    public static void SetLimitedCursorPosition (int X, int Y)
+    {
+        X = X < 0 ? 0 : X > _clientArea.Width ? _clientArea.Width : X;
+        Y = Y < 0 ? 0 : Y > _clientArea.Height ? _clientArea.Height : Y;
+        EF.Mouse.Position = new (_clientArea.X + X, _clientArea.Y + Y);
+    }
+
+    public static void GrowVirtualCursorPosition (SD.Point point)
+    {
+        _vCursorOffset.X += point.X - _initiaCursorPos.X;
+        _vCursorOffset.Y += point.Y - _initiaCursorPos.Y;
+    }
+}
+
+
+class MouseListener : RUI.MouseCallback
+{
+    const MethodImplOptions INLINE = MethodImplOptions.AggressiveInlining;
+    const int PAUSE_DELAY = 70;
+
+    #nullable disable
+    public MouseListener () { /*_callbacks & Viewport*/ } 
+    #nullable enable
+
+    NavigationCallback _callbacks;
+    public RD.RhinoViewport Viewport { get; private set; }
+
+    NavigationMode _mode;
+    Vec _offset;
+
+    public NavigationMode NavigationMode => _mode;
+
+    #region Preview
+
+    NavigationConduit? _conduit;
+
+    [MethodImpl(INLINE)]
+    void _StartPreview ()
+    {
+        (_conduit ??= new (this)).Enabled = true;
+    }
+
+    [MethodImpl(INLINE)]
+    void _StopPreview()
+    {
+        if (_conduit != null) _conduit.Enabled = false;
+    }
+
+    #endregion
+
+    #region Switches
+
+    /// <summary>
+    /// Flag to cancel or not the MouseUp event.
+    /// </summary>
+    bool _started;
+    
+    /// <summary>
+    /// Flag blocking `OnMouseMove` event after `EF.Mouse.Position=...`
+    /// </summary>
+    bool _lock;
+
+    bool _pause;
+
+    void _StartPause ()
+    {
+        _pause = true;
+        System.Threading.Tasks.Task.Delay (PAUSE_DELAY).ContinueWith ((_) => { _pause = false; });
+    }
+
+    #endregion
+
+    System.Windows.Forms.Cursor _ccur;
+    public void Start (RUI.MouseCallbackEventArgs e, NavigationCallback callbacks)
+    {
+        Viewport   = e.View.ActiveViewport;
+        _callbacks = callbacks;
+        _started   = false;
+        _lock      = false;
+        Enabled    = true;
+    }
+
+    protected override void OnMouseMove (RUI.MouseCallbackEventArgs e)
+    {
+        if (_started == false) {
+            _started = true;
+                
+            var origin = new Vec (e.ViewportPoint);
+
+            Enabled = _callbacks.OnStartNavigation (Viewport, origin);
+            if (Enabled) e.Cancel = true;
+            else return;
+
+            _mode        = NavigationMode.Rotate;
+            _offset.Set (0);
+
+            NavigationCursor.InitCursor (Viewport, origin);
+            NavigationCursor.HideCursor ();
+
+            _StartPreview ();
+            
+            return;
+        }
+
+        e.Cancel = true;
+
+        if (_lock) {
+            _lock = false;
+            return;
+        }
+
+        if (_pause) {
+            _lock = true;
+            NavigationCursor.SetCursorPosition (NavigationCursor.InitialCursorPosition);
+            return;
+        }
+
+        if (NavigationCursor.InitialCursorPosition.Is (0)) {
+            return;
+        }
+
+        _offset = _offset.Add (e.ViewportPoint).Substract (NavigationCursor.InitialCursorPosition);
+
+        if (EF.Keyboard.Modifiers == EF.Keys.Alt)
+        {
+            RhinoApp.WriteLine ("ALT");
+        }
+
+        if (e.ShiftKeyDown) // Pan
+        {
+            if (_mode == NavigationMode.Translate)
+            {
+                _callbacks.OnTranslation (_offset);
+                NavigationCursor.GrowVirtualCursorPosition (e.ViewportPoint);
+            }
+            else if (_callbacks.OnNavigationModeChange (_mode))
+            {
+                _mode = NavigationMode.Translate;
+                _offset.Set (0);
+                _StartPause ();
+            }
+        }
+        else if (e.CtrlKeyDown) // Zoom
+        {
+            if (_mode == NavigationMode.Zoom)
+            {
+                _callbacks.OnZoom (_offset);
+            }
+            else if (_callbacks.OnNavigationModeChange (_mode))
+            {
+                _mode = NavigationMode.Zoom;
+                _offset.Set (0);
+                _StartPause ();
+            }
+        }
+        else // Rotate
+        {
+            if (_mode == NavigationMode.Rotate)
+            {
+                _callbacks.OnRotation (_offset);
+            }
+            else if (_callbacks.OnNavigationModeChange (_mode))
+            {
+                _mode = NavigationMode.Rotate;
+                _offset.Set (0);
+                _StartPause ();
+            }
+        }
+
+        _lock = true;
+        NavigationCursor.SetCursorPosition (NavigationCursor.InitialCursorPosition);
+    }
+
+    protected override void OnMouseUp (RUI.MouseCallbackEventArgs e)
+    {
+        Enabled = false;
+        _StopPreview ();
+        
+        if (_started)
+        {
+            e.Cancel = true;
+            
+            var pos = NavigationCursor.InitialCursorPosition + NavigationCursor.VirtualCursorOffset;
+            NavigationCursor.SetLimitedCursorPosition (pos.X, pos.Y);
+            _callbacks.OnStopNavigation ();
+
+        }
+        NavigationCursor.ShowCursor ();
+    }
+}
+
+
+class NavigationConduit : RD.DisplayConduit
+{
+    MouseListener _listener;
+    SD.Rectangle _clientRect;
+    RD.DisplayBitmap _tIco;
+    RD.DisplayBitmap _zIco;
+    RD.DisplayBitmap _rIco;
+
+    public NavigationConduit (MouseListener listener)
+    {
+        _listener = listener;
+        _clientRect = listener.Viewport.ParentView.ScreenRectangle;
+        _tIco = new (Resources.HandBitmap);
+        _zIco = new (Resources.MagnifyingGlassBitmap);
+        _rIco = new (Resources.RotationBitmap);
+    }
+
+    // Il n'est pas possible avec DisplayConduit de dessiner au dessus des objets sélectionnés et le Gumball.
+    protected override void DrawForeground(RD.DrawEventArgs e)
+    {
+        var pos = NavigationCursor.VirtualCursorPosition;
+        switch (_listener.NavigationMode)
+        {
+        case NavigationMode.Rotate    : e.Display.DrawBitmap (_rIco, pos.X-10, pos.Y-10); break;
+        case NavigationMode.Translate : e.Display.DrawBitmap (_tIco, pos.X-10, pos.Y-10); break;
+        case NavigationMode.Zoom      : e.Display.DrawBitmap (_zIco, pos.X-10, pos.Y-10); break;
+        }
+    }
+}
+
+
+class NavigationController : NavigationCallback
+{
+    public readonly IntersectionData Data;
+    Rhino.DocObjects.ViewportInfo _vpInfo;
+    Point3d _initialLocation;
+    Vector3d _initialDirection;
+    Vector3d _initiallUp;
+    Vector3d _initialX;
+    Interval _initialSizeX;
+    Interval _initialSizeY;
+    
+    // Il n'est pas possible d'utiliser le cumul des décalages car en vue perspective,
+    // entre deux mouvements XYZ, le zoom (et donc `_w2sScale`) a pus changer.
+    Transform _cumulTransformation;
+    double _cumulRotZ;
+    double _cumulRotX;
+
+    public double RotationZ;
+    public double RotationX;
+    public double TranslationX;
+    public double TranslationY;
+    public double ZoomFactor;
+    double _w2sScale;
+    
+    #nullable disable //_vpInfo
+    public NavigationController ()
+    {
+        Data = new ();
+    }
+    #nullable enable
+
+    public override bool OnStartNavigation (RD.RhinoViewport viewport, Vec viewportPoint)
+    {
+        // Ne fonctionne actuellement pas avec une projection à deux point
+        if (viewport.IsTwoPointPerspectiveProjection) return false;
+
+        Data.Viewport = viewport;
+        Data.ViewportPoint = new SD.Point (viewportPoint.X, viewportPoint.Y);
+
+        _vpInfo = new (viewport);
+        _vpInfo.GetFrustum (out var left, out var right, out var bottom, out var top, out var near, out var far);
+        _initialSizeX     = new Interval (left, right);
+        _initialSizeY     = new Interval (top, bottom);
+        _initialLocation  = new Point3d (viewport.CameraLocation);
+        _initialDirection = new Vector3d (viewport.CameraDirection);
+        _initiallUp       = new Vector3d (viewport.CameraUp);
+        _initialX         = new Vector3d (viewport.CameraX);
+        
+        _cumulTransformation = Transform.Identity;
+        RotationZ    = _cumulRotX = 0;
+        RotationX    = _cumulRotZ = 0;
+        ZoomFactor   = 1;
+        TranslationX = 0;
+        TranslationY = 0;
+
+        Data.Viewport.GetWorldToScreenScale (Data.TargetPoint, out _w2sScale);
+
+        if (Data.Debug)
+        {
+            Intersector.StartPerformenceLog ();
+            Intersector.Compute (Data, viewport.CameraTarget);
+            Intersector.StopPerformenceLog (Data);
+        }
+        else
+        {
+            Intersector.Compute (Data, viewport.CameraTarget);
+        }
+
+        // if (Data.Status == IntersectionStatus.None) 
+        //     return false;
+
+        if (Data.ShowMarker) InfoConduit.Show (Data);
+        return true;
+    }
+
+    public override bool OnNavigationModeChange (NavigationMode mode)
+    {
+        Data.Viewport.GetWorldToScreenScale (Data.TargetPoint, out _w2sScale);
+
+        _cumulTransformation = GetPositionTransform ();
+
+        TranslationX = 0;
+        TranslationY = 0;
+
+        ZoomFactor = 1;
+
+        _cumulRotZ += RotationZ;
+        _cumulRotX += RotationX;
+        RotationZ = 0;
+        RotationX = 0;
+        
+        _vpInfo.GetFrustum (out var left, out var right, out var bottom, out var top, out var near, out var far);
+        _initialSizeX = new Interval (left, right);
+        _initialSizeY = new Interval (top, bottom);
+
+        return true;
+    }
+
+    public Transform GetRotationTransfom ()
+    {
+        return (
+            Transform.Identity
+            * Transform.Rotation (_cumulRotZ + RotationZ, Vector3d.ZAxis, Data.TargetPoint)
+            * Transform.Rotation (_cumulRotX + RotationX, _initialX, Data.TargetPoint)
+        );
+    }
+
+    public Transform GetPositionTransform ()
+    {
+        return (
+            Transform.Identity
+            * Transform.Translation (-(_initialX*(TranslationX)) + _initiallUp*(TranslationY))
+            * Transform.Scale (Data.TargetPoint, ZoomFactor)
+            * _cumulTransformation
+        );
+    }
+
+    public void ApplyChanges ()
+    {
+        // RhinoApp.WriteLine (
+        //     "tX " + TranslationX.ToString("F3") +", tY "+TranslationY.ToString("F3") + 
+        //     ", rZ "+ RotationZ.ToString("F3") + ", rX " + RotationX.ToString("F3") + 
+        //     ", z " + ZoomFactor.ToString ("F3")
+        // );
+        
+        var pos = new Point3d (_initialLocation);
+        var dir = new Vector3d (_initialDirection);
+        var up = new Vector3d (_initiallUp);
+        
+        var t = GetRotationTransfom ();
+        pos.Transform (GetPositionTransform ());
+        pos.Transform (t);
+        dir.Transform (t);
+        up.Transform (t);
+
+        var vp = Data.Viewport;
+
+        _vpInfo.SetCameraDirection (dir);
+        _vpInfo.SetCameraLocation (pos);
+        _vpInfo.SetCameraUp (up);
+        vp.SetCameraTarget (Data.TargetPoint, updateCameraLocation: false);
+
+        if (_vpInfo.IsParallelProjection)
+        {
+            _vpInfo.SetFrustum (
+                _initialSizeX.T0 * ZoomFactor,
+                _initialSizeX.T1 * ZoomFactor,
+                _initialSizeY.T1 * ZoomFactor,
+                _initialSizeY.T0 * ZoomFactor,
+                _vpInfo.FrustumNear,
+                _vpInfo.FrustumFar
+            );
+        }
+        
+        vp.SetViewProjection (_vpInfo, updateTargetLocation: false);
+        vp.ParentView.Redraw ();
+    }
+
+    public override void OnRotation (Vec offset)
+    {
+        RotationZ = -Math.PI * offset.X / 300;
+        RotationX = -Math.PI * offset.Y / 300;
+        ApplyChanges ();
+        Data.Viewport.ParentView.Document.Views.Redraw ();
+    }
+
+    public override void OnZoom (Vec offset)
+    {
+        ZoomFactor =  1 + ((double)offset.Y) / 300;
+        if (ZoomFactor < 0.001) ZoomFactor = 0.001;
+        ApplyChanges ();
+    }
+
+    public override void OnTranslation (Vec offset)
+    {
+        TranslationX = offset.X / _w2sScale;
+        TranslationY = offset.Y / _w2sScale;
+        ApplyChanges ();
+    }
+
+    public override void OnStopNavigation ()
+    {
+        InfoConduit.Hide ();
+        Data.Viewport.ParentView.Redraw ();
+    }
+}
+
+
+/*/
+
+ ██████  ██████  ███████  ██████  ██      ███████ ████████ ███████ 
+██    ██ ██   ██ ██      ██    ██ ██      ██         ██    ██      
+██    ██ ██████  ███████ ██    ██ ██      █████      ██    █████   
+██    ██ ██   ██      ██ ██    ██ ██      ██         ██    ██      
+ ██████  ██████  ███████  ██████  ███████ ███████    ██    ███████ 
+
+/*/
+
+
 #if USE_BITMAP
 
 class IdConduit : RD.DisplayConduit
@@ -854,3 +1270,112 @@ class IdConduit : RD.DisplayConduit
 
 #endif
 
+#if false
+
+class GetRhinoMouseOffset
+// Obsoléte !
+// Pas de chance, aprés avoir trouvé une solution pour optenir la décalage de la souris l'orsqu'elle peut passer d'un bord à l'autre,
+// (ce qui est le comportement de la souris dans Rhino pendant une rotation)
+// j'ai pu constater que l'appelle à `MouseCallbackEventArgs.Cancel = true` annulais cet effet.
+// Mais c'était tellement ... que je garde le code.
+{
+    SD.Point _startPoint;
+    SD.Point _lastPoint;
+    SD.Point _offsetPoint;
+    SD.Rectangle _viewportBounds;
+
+    int _lastDirX;
+    int _lastSideX;
+    int _loopX;
+    int _lastDirY;
+    int _lastSideY;
+    int _loopY;
+
+    public void Start (RD.RhinoViewport viewport, SD.Point viewportPoint)
+    {
+        _startPoint = viewportPoint;
+        _lastPoint.X = viewportPoint.X;
+        _lastPoint.Y = viewportPoint.Y;
+        _offsetPoint.X = 0;
+        _offsetPoint.Y = 0;
+        _viewportBounds = viewport.Bounds;
+
+        _lastDirX = 0;
+        _lastSideX = 1;
+        _loopX = 0;
+        _lastDirY = 0;
+        _lastSideY = 1;
+        _loopY = 0;
+    }
+
+    public void Compute (SD.Point currentPoint)
+    {
+        var currentSideX = currentPoint.X < _startPoint.X ? -1
+                         : currentPoint.X > _startPoint.X ? 1
+                         : 0;
+
+        if (_lastDirX != _lastSideX)
+        {
+            _lastDirX = _lastPoint.X < currentPoint.X ? 1 : -1;
+        }
+        else if (currentSideX < 0 && _startPoint.X <= _lastPoint.X)
+        {
+            //RhinoApp.WriteLine ("flip to left");
+            _loopX++;
+            _lastDirX = 1;
+        }
+        else if (0 < currentSideX && _lastPoint.X <= _startPoint.X)
+        {
+            //RhinoApp.WriteLine ("flip to right");
+            _loopX--;
+            _lastDirX = -1;
+        }
+        else
+        {
+            _lastDirX = _lastPoint.X < currentPoint.X ? 1 : -1;
+        }
+
+        _offsetPoint.X = _viewportBounds.Width * _loopX + (currentPoint.X - _startPoint.X);
+        _lastSideX = currentSideX;
+        _lastPoint.X = currentPoint.X;
+        //RhinoApp.WriteLine ($" side: {(_lastSideX < 0 ? "-1" : "+1")} dirX: {(_lastDirX < 0 ? "-1" : "+1")} loopX: {_loopX} offsetX: { _offsetPoint.X }");
+
+
+        var currentSideY = currentPoint.Y < _startPoint.Y ? -1
+                         : currentPoint.Y > _startPoint.Y ? 1
+                         : 0;
+
+        if (_lastDirY != _lastSideY)
+        {
+            _lastDirY = _lastPoint.Y < currentPoint.Y ? 1 : -1;
+        }
+        else if (currentSideY < 0 && _startPoint.Y <= _lastPoint.Y)
+        {
+            //RhinoApp.WriteLine ("flip to top");
+            _loopY++;
+            _lastDirY = 1;
+        }
+        else if (0 < currentSideY && _lastPoint.Y <= _startPoint.Y)
+        {
+            //RhinoApp.WriteLine ("flip to bottom");
+            _loopY--;
+            _lastDirY = -1;
+        }
+        else
+        {
+            _lastDirY = _lastPoint.Y < currentPoint.Y ? 1 : -1;
+        }
+
+        _offsetPoint.Y = _viewportBounds.Height * _loopY + (currentPoint.Y - _startPoint.Y);
+        _lastSideY = currentSideY;
+        _lastPoint.Y = currentPoint.Y;
+        //RhinoApp.WriteLine ($" sideY: {(_lastSideY < 0 ? "-1" : "+1")} dirY: {(_lastDirY < 0 ? "-1" : "+1")} loopY: {_loopY} offsetY: { _offsetPoint.Y }");
+    }
+}
+
+#endif
+
+/*/
+link:
+- https://patorjk.com/software/taag/#p=display&f=ANSI%20Regular&t=camera
+/*/

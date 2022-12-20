@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <AssemblyTitle>AutoCameraTarget</AssemblyTitle>
-        <Version>1.3.0</Version>
+        <Version>2.0.0</Version>
         <Description>this plugin interpret the `Ctrl+Shift+RMB` keys as the default navigation behavior.</Description>
     </PropertyGroup>
     
@@ -15,10 +15,14 @@
 
     <ItemGroup>
         <EmbeddedResource Include="EmbeddedResources\**\*.ico" />
+        <EmbeddedResource Include="EmbeddedResources\**\*.png" />
     </ItemGroup>
   
     <ItemGroup>
+        <Reference Private="False" Include="Eto" HintPath="C:\Program Files\Rhino 7\System\Eto.dll" />
         <Reference Private="False" Include="RhinoCommon" HintPath="C:\Program Files\Rhino 7\System\RhinoCommon.dll" />
+        <Reference Private="False" Include="Rhino.UI" HintPath="C:\Program Files\Rhino 7\System\Rhino.UI.dll" />
+        <Reference Include="System.Windows.Forms" />
     </ItemGroup>
   
     <ItemGroup>
@@ -45,7 +49,7 @@
     
     <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="$(Configuration) == 'Release'">
         <Copy SourceFiles="manifest.yml" DestinationFolder="$(OutDir)" />
-        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command='"C:\Program Files\Rhino 7\System\Yak.exe" build' />
+        <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command="&quot;C:\Program Files\Rhino 7\System\Yak.exe&quot; build" />
     </Target>
 
 </Project>

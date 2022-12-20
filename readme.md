@@ -113,3 +113,43 @@ La méthode de sélection d'objets à l'aide d'une carte d'IDs permet de calcule
 
 Dans l'état actuel, le test à l'aide d'une carte d'IDs est désactivé.
 Les cas où les objets sous le curseur de la souris créent plus d'un million de faces me semblent plutôt rares. `Parallel.For(Intersection.Mesh Ray)` fonctionne bien dans la plupart des cas.
+
+<table>
+
+<tr><th> 
+    <th>
+    <th> Shift
+    <th> Ctrl
+    <th> Alt
+
+<tr>
+    <td> Rotation
+    <td> RMB
+    <td> Lock one axis
+    <td>
+    <td>
+
+<tr>
+    <td> Rotation
+    <td> Shift+Ctrl+RMB
+    <td> Lock one axis
+    <td> Lock one axis
+    <td>
+
+<tr>
+    <td> Pan
+    <td> Shift+RMB
+    <br> Shift+Ctrl+RMB
+    <td> Lock one axis
+    <td> Lock one axis
+    <td>
+
+<tr>
+    <td> Zoom
+    <td> Ctrl+RMB
+    <br> Alt+RMB
+    <td> 
+    <td> 
+    <td>
+
+</table>

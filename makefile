@@ -1,6 +1,6 @@
 # https://developer.rhino3d.com/guides/yak/pushing-a-package-to-the-server/
 
-VERSION=1.3.0
+VERSION=2.0.0
 
 test:
 	"C:\Program Files\Rhino 7\System\Yak.exe" search --all autocameratarget
