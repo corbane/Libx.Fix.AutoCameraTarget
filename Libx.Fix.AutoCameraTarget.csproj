@@ -14,15 +14,14 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <EmbeddedResource Include="EmbeddedResources\**\*.ico" />
-        <EmbeddedResource Include="EmbeddedResources\**\*.png" />
+        <EmbeddedResource Include="ico\**\*.ico" />
+        <EmbeddedResource Include="ico\**\*.png" />
     </ItemGroup>
-  
+
     <ItemGroup>
         <Reference Private="False" Include="Eto" HintPath="C:\Program Files\Rhino 7\System\Eto.dll" />
         <Reference Private="False" Include="RhinoCommon" HintPath="C:\Program Files\Rhino 7\System\RhinoCommon.dll" />
         <Reference Private="False" Include="Rhino.UI" HintPath="C:\Program Files\Rhino 7\System\Rhino.UI.dll" />
-        <Reference Include="System.Windows.Forms" />
     </ItemGroup>
   
     <ItemGroup>
@@ -34,6 +33,7 @@
     <PropertyGroup>
         <OutputType>Library</OutputType>
         <TargetExt>.rhp</TargetExt>
+        <GenerateDocumentationFile>True</GenerateDocumentationFile>
     </PropertyGroup>
 
     <PropertyGroup Condition="$(Configuration) == 'Debug'">
@@ -41,12 +41,13 @@
         <StartProgram>C:\Program Files\Rhino 7\System\Rhino.exe</StartProgram>
         <StartArguments></StartArguments>
         <StartAction>Program</StartAction>
+        <NoWarn>1701;1702;1591</NoWarn>
     </PropertyGroup>
   
     <PropertyGroup Condition="$(Configuration) == 'Release'">
         <OutDir>yak\$(Version)</OutDir>
     </PropertyGroup>
-    
+  
     <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="$(Configuration) == 'Release'">
         <Copy SourceFiles="manifest.yml" DestinationFolder="$(OutDir)" />
         <Exec WorkingDirectory="$(ProjectDir)$(OutDir)" Command="&quot;C:\Program Files\Rhino 7\System\Yak.exe&quot; build" />
