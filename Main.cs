@@ -846,8 +846,6 @@ static class Intersector
 
     readonly static List<ON.Mesh> _usedMeshes = new ();
 
-    static System.Diagnostics.Stopwatch? _sw;
-
     static ON.Ray3d _GetMouseRay (RD.RhinoViewport vp)
     {
         var mp = RUI.MouseCursor.Location;
@@ -1080,6 +1078,8 @@ static class Intersector
 
     #region Infos / Debug
 
+    static System.Diagnostics.Stopwatch? _sw;
+
     public static void StartPerformenceLog ()
     {
         _sw ??= new ();
@@ -1102,9 +1102,9 @@ static class Intersector
 }
 
 
-class InfoConduit : RD.DisplayConduit
+class IntersectionConduit : RD.DisplayConduit
 {
-    static InfoConduit? g_instance;
+    static IntersectionConduit? g_instance;
 
     public static void Show (IntersectionData data)
     {
@@ -1120,7 +1120,7 @@ class InfoConduit : RD.DisplayConduit
 
     readonly IntersectionData _data;
 
-    InfoConduit (IntersectionData data)
+    IntersectionConduit (IntersectionData data)
     {
         _data = data;
         SpaceFilter = RO.ActiveSpace.ModelSpace;
@@ -1995,7 +1995,7 @@ class CameraController : NavigationListener
         }
 
         // Affiche les informations visuelles.
-        if (Options.Marker) InfoConduit.Show (Data);
+        if (Options.Marker) IntersectionConduit.Show (Data);
         if (Options.ShowCamera) CameraConduit.Show (viewport);
 
         VirtualCursor.Init (new (viewportPoint.X, viewportPoint.Y));
@@ -2039,7 +2039,7 @@ class CameraController : NavigationListener
         // TODO: Testez si la cible est devant la caméra.
         if (Data.Status != IntersectionStatus.None)
             Data.Viewport.SetCameraTarget (Data.TargetPoint, updateCameraLocation: false);
-        InfoConduit.Hide ();
+        IntersectionConduit.Hide ();
         CameraConduit.hide ();
         VirtualCursor.Hide ();
 
