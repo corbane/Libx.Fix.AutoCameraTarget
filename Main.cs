@@ -1481,8 +1481,7 @@ class NavigationListener : RUI.MouseCallback
 
     ED.Point _offset;
 
-    [MethodImpl(INLINE)]
-    ED.Point _GetOffset (SD.Point point)
+    [MethodImpl(INLINE)] ED.Point _GetOffset (SD.Point point)
     {
         _offset.X = point.X - Cursor.InitialCursorPosition.X;
         _offset.Y = point.Y - Cursor.InitialCursorPosition.Y;
@@ -1581,8 +1580,7 @@ class NavigationListener : RUI.MouseCallback
     
     protected override void OnMouseMove (RUI.MouseCallbackEventArgs e)
     {
-        // Attend que la souris se déplace d'au moins un pixel
-        // pour ne pas annuler l'affichage du menu contextuel.
+        // Waits for the mouse to move at least one pixel so as not to cancel the display of the contextual menu.
         if (_started == false) {
             _started = true;
                 
@@ -1592,9 +1590,9 @@ class NavigationListener : RUI.MouseCallback
 
             var mod = Keyboard.GetCurrentModifier ();
 
-            // !!! Ne devrais pas être e.ViewportPoint mais IntersectionData.ViewportPoint,
-            //     car il peut y avoir un décalage entre le point d'intersection et le curseur virtuel.
-            //     Mais les décalages sont minimes et visibles surtout en mode débogage.
+            // !!! Shouldn't be e.ViewportPoint but IntersectionData.ViewportPoint,
+            //     because there may be an offset between the intersection point and the virtual cursor.
+            //     but this class is not supposed to know `CameraController`
             // !!!
             Cursor.InitCursor (Viewport, e.ViewportPoint);
             Cursor.HideCursor ();
@@ -1605,14 +1603,14 @@ class NavigationListener : RUI.MouseCallback
             return;
         }
 
-        // Cette fonction est-elle appelée après le repositionnement du curseur ?
+        // Is this function called after repositioning the cursor ?
         if (_lock) {
             e.Cancel = true;
             _lock = false;
             return;
         }
 
-        // Y a-t-il un temps de pause entre le changement d'actions ?
+        // Is there a pause time between action changes ?
         if (_pause) {
             e.Cancel = true;
             _lock = true;
@@ -1622,13 +1620,13 @@ class NavigationListener : RUI.MouseCallback
 
         var offset = _GetOffset (e.ViewportPoint);
 
-        // Y a-t'il quelque chose à déplacer ?
+        // Is there anything to move ?
         if (offset.X == 0 && offset.Y == 0) {
             e.Cancel = true;
             return;
         }
 
-        // Y a-t'il un changement d'action ?
+        // Is there a change of action ?
         var amodifier = _GetActiveModifier ();
         var cmodifier = Keyboard.GetCurrentModifier ();
         if (amodifier != cmodifier)
@@ -1638,7 +1636,7 @@ class NavigationListener : RUI.MouseCallback
             _StartPause ();
         }
 
-        // Y a-t'il une action à effectuer ?
+        // Is there a change of action ?
         var action = _GetAction (cmodifier);
         if (action != null) {
             e.Cancel = true;
@@ -1719,7 +1717,7 @@ class Camera
     /// This rotation is performed before the Z rotation. </summary>
     public double RotX;
     /// <summary> Rotation of the camera around the Z axis.
-    /// This rotation is performed before the X rotation. </summary>
+    /// This rotation is performed after the X rotation. </summary>
     public double RotZ;
 
     /// <summary> Global X position of all transformations </summary>
@@ -2022,8 +2020,8 @@ class CameraController : NavigationListener
         _doc = viewport.ParentView.Document;
         _inplanview = viewport.IsPlanView;
 
-        // Calcule le point d'intersection sous le curseur de la souris.
-        // S'il n'y a rien de visible dans la vue l'intersection est placée sur la position de la caméra.
+        // Calculate the point of intersection under the mouse cursor.
+        // If there is nothing visible in the view, the intersection is placed on the camera position.
         if (Options.Debug) {
             Intersector.StartPerformenceLog ();
             Intersector.Compute (Data, viewport.CameraLocation);
@@ -2032,26 +2030,22 @@ class CameraController : NavigationListener
             Intersector.Compute (Data, viewport.CameraLocation);
         }
 
-        // Initialise les propriétés de déplacements.
+        // Initialize properties.
         _InitializePan ();
-
-        // Initialise les propriétés du zoom.
         _InitializeZoom ();
-
-        // Initialise les propriétés des rotations prédéfinis.
         _InitializePresets ();
 
-        // Initialise la camera.
+        // Initialize the camera.
         _cam.Init (viewport,  Data.TargetPoint);
 
-        // Définis les actions.
+        // Define actions.
         if (Options.DataVersion != _optversion)
         {
             _UpdateActions ();
             _optversion = Options.DataVersion;
         }
 
-        // Affiche les informations visuelles.
+        // Displays visual information.
         if (Options.Marker) IntersectionConduit.Show (Data);
         if (Options.ShowCamera) CameraConduit.Show (viewport);
 
@@ -2190,7 +2184,8 @@ class CameraController : NavigationListener
         new (ON.Point3d.Origin, ON.Vector3d.XAxis),
     };
 
-    // Accumulateur d'offsets.
+    /// <summary>
+    ///     Offset accumulator. </summary>
     ED.Point _accu;
 
     int _scount;

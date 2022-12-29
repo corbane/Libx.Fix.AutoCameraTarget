@@ -85,7 +85,8 @@ activé l'option `marker` et `debug`
     <td>
         <b>Aucune intersection possible</b> <br/>
         La dernière possibilité est lorsqu'il n'y a aucun objet visible dans la vue. <br/>
-        Dans ce cas, le programme ne fait rien du tout et laisse la cible de la caméra inchangée.
+        Pour la v1, le programme ne fait rien du tout et laisse la cible de la caméra inchangée.
+        Pour la v2, la caméra tourne sur elle-même.
 
 </table>
 
