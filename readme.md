@@ -17,29 +17,13 @@ Utilisation
 -----------
 
 
-Il n'y a qu'une seule commande: `ToggleAutoCameraTarget` avec trois options:
-- `active` active ou non le positionnement automatique de la cible.
-- `marker` affiche un point à l'emplacement de la cible.
-- `debug`  affiche les éléments utilisés pour le calcul des intersections. (voir ci-dessous)
-
-![Toggle debug mode](./doc/cmd.png)
+Il n'y a qu'une seule commande: `ToggleAutoCameraTarget`.
 
 Vous pouvez activer le ciblage automatique de la caméra lorsque Rhino démarre avec la ligne de commande dans les paramètres: `Rhino Options > General > Command Lists`
 
-```txt
-ToggleAutoCameraTarget active=Yes marker=Yes _Enter
-```
 
-Le mode debug
--------------
-
-
-Le mode débogage permet de visualiser l'intersection entre le curseur de la souris et les objets visibles de la vue.
-Cela aide à comprendre comment fonctionne le calcul.
-
-activé l'option `marker` et `debug`
-
-![Toggle debug mode](./doc/cmd-debug.png)
+Le intersections
+----------------
 
 <table>
 <tr>
