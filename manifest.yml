@@ -5,4 +5,4 @@ authors:
 - Vrecq Jean-marie
 description: this plugin interpret the `Ctrl+Shift+RMB` keys as the default navigation behavior.
 url: https://github.com/corbane/Libx.Fix.AutoCameraTarget
-icon: Libx.Fix.AutoCameraTarget.ico.RotateArround.png
+icon: RotateArround.png

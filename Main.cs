@@ -19,6 +19,7 @@ using SD = System.Drawing;
 using ED = Eto.Drawing;
 using EF = Eto.Forms;
 
+using RH = Rhino;
 using ON = Rhino.Geometry;
 using RP = Rhino.PlugIns;
 using RC = Rhino.Commands;
@@ -30,7 +31,7 @@ using RUI = Rhino.UI;
 using RhinoDoc = Rhino.RhinoDoc;
 using RhinoApp = Rhino.RhinoApp;
 using RhinoViewSettings = Rhino.ApplicationSettings.ViewSettings;
-using Rhino;
+using System.Security.Cryptography;
 
 
 /*/
@@ -60,8 +61,11 @@ namespace Libx.Fix.AutoCameraTarget;
 
 public class EntryPoint : RP.PlugIn
 {
+    public override RP.PlugInLoadTime LoadTime => RP.PlugInLoadTime.AtStartup; // for Intersector.AttachEvents ()
+
     protected override RP.LoadReturnCode OnLoad (ref string errorMessage)
     {
+        Intersector.AttachEvents ();
         Main.Instance.LoadOptions (Settings);
         return base.OnLoad (ref errorMessage);
     }
@@ -147,9 +151,9 @@ class Main
 
     public void ShowOptions () { new NavigationForm (Options).Show (); }
 
-    public void LoadOptions (PersistentSettings settings) { Options.Load (settings); }
+    public void LoadOptions (RH.PersistentSettings settings) { Options.Load (settings); }
 
-    public void SaveOptions (PersistentSettings settings) { Options.Save (settings); }
+    public void SaveOptions (RH.PersistentSettings settings) { Options.Save (settings); }
 
     void _OnSettingsChanged (object sender, PropertyChangedEventArgs e)
     {
@@ -345,7 +349,7 @@ class NavigationOptions : IIntersectionOptions, INavigationOptions
             p.SetValue (this, p.GetValue (data));
     }
     
-    public void Save (PersistentSettings settings)
+    public void Save (RH.PersistentSettings settings)
     {
         var t_bool   = typeof (bool);
         var t_int    = typeof (int);
@@ -375,7 +379,7 @@ class NavigationOptions : IIntersectionOptions, INavigationOptions
         }
     }
 
-    public void Load (PersistentSettings settings)
+    public void Load (RH.PersistentSettings settings)
     {
 
         var t_bool   = typeof (bool);
@@ -783,19 +787,62 @@ class IntersectionData
 
 static class Intersector
 {
-    readonly static RO.ObjectEnumeratorSettings _enumeratorSettings = new ()
+    #region Cache
+    /*/
+        Event stack:
+
+        - _OnCloseDocument or _OnNewDocument
+
+        - then per file in worksession:
+          - _OnBeginOpenDocument
+          - _OnAddRhinoObject*...
+          - _OnEndOpenDocument
+          - _OnEndOpenDocumentInitialViewUpdate
+          - _OnActiveDocumentChanged or not
+
+        !!! Except _OnNewDocument, no event is called when the application starts without opening an existing file. !!!
+    /*/
+
+    static Dictionary<Guid, (RO.RhinoObject Obj, ON.BoundingBox BBox)> _bboxcache = new ();
+
+    public static void AttachEvents ()
     {
-        VisibleFilter = true,
-        HiddenObjects = false,
-        DeletedObjects = false,
-        IncludeGrips = false,
-        LockedObjects = true,
-        ActiveObjects = true,  // File objects
-        ReferenceObjects = true,  // Imported/Linked Objects
-        // ViewportFilter - Set in UpdatePoint,
-        // NormalObjects  - Not understand, probably unnecessary since HiddenObjects, LockedObjects are defined.
-        // IdefObjects    - Not understand, if true, blocked objects and references are excluded.
-    };
+        RhinoDoc.CloseDocument                    += _OnCloseDocument;
+        RhinoDoc.NewDocument                      += _OnNewDocument;
+        RhinoDoc.AddRhinoObject                   += _OnAddRhinoObject;
+        RhinoDoc.DeleteRhinoObject                += _OnDeleteRhinoObject;
+    }
+
+    private static void _OnCloseDocument (object sender, RH.DocumentEventArgs e)
+    {
+        RhinoApp.WriteLine (nameof (_OnCloseDocument));
+        _bboxcache.Clear ();
+    }
+
+    private static void _OnNewDocument (object sender, RH.DocumentEventArgs e)
+    {
+        RhinoApp.WriteLine (nameof (_OnNewDocument));
+        _bboxcache.Clear ();
+    }
+
+    static void _OnDeleteRhinoObject (object sender, RO.RhinoObjectEventArgs e)
+    {
+        // RhinoApp.WriteLine (nameof (_OnDeleteRhinoObject));
+        _bboxcache.Remove (e.ObjectId);
+    }
+
+    static void _OnAddRhinoObject (object sender, RO.RhinoObjectEventArgs e)
+    {
+        // RhinoApp.WriteLine (nameof (_OnAddRhinoObject));
+        // var bbox = e.TheObject.Geometry.GetBoundingBox (accurate: false);
+        // if (bbox.IsValid == false) return;
+        _bboxcache[e.ObjectId] = (
+            e.TheObject,
+            e.TheObject.Geometry.GetBoundingBox (accurate: false)
+        );
+    }
+
+    #endregion
 
     readonly static List<ON.Mesh> _usedMeshes = new ();
 
@@ -811,7 +858,7 @@ static class Intersector
         // Visiblement GetFrustumLine retourne une line du point le plus loin au point le plus proche.
         return new ON.Ray3d (line.To, line.From - line.To);
     }
-
+    
     public static void Compute (IntersectionData data, ON.Point3d? defaultTargetPoint = null)
     {
         var ray = _GetMouseRay (data.Viewport);
@@ -830,26 +877,33 @@ static class Intersector
         };
 
         uint total = 0;
-        ON.BoundingBox bbox;
         ON.BoundingBox activebbox = ON.BoundingBox.Unset;
         ON.BoundingBox visiblebbox = ON.BoundingBox.Unset;
         double t;
         double tbboxmin = 1.1;
-        var arg = new Rhino.DocObjects.RhinoObject[1];
+        var arg = new RO.RhinoObject[1];
+
+        #if DEBUG
+        if (data.Viewport.ParentView.Document.Objects.Count != _bboxcache.Count)
+            RhinoApp.WriteLine (
+                "Document.Objects.Count != _bboxcache.Count"+
+                "\n  count: "+ data.Viewport.ParentView.Document.Objects.Count+
+                "\n  cache: "+_bboxcache.Count
+            );
+        #endif
 
         if (data.Viewport.ParentView.Document.Objects.Count < _usedMeshes.Capacity)
             _usedMeshes.Capacity = data.Viewport.ParentView.Document.Objects.Count;
 
-        _enumeratorSettings.ViewportFilter = data.Viewport;
-        foreach (var obj in data.Viewport.ParentView.Document.Objects.GetObjectList (_enumeratorSettings))
+        foreach (var (obj, bbox) in _bboxcache.Values)
         {
-            bbox = obj.Geometry.GetBoundingBox (accurate: false);
             if (bbox.IsValid == false) continue;
-
+        
             t = _RayBoxIntersection (rayPos, rayInvDir, bbox);
             if (t < 0)
             {
-                if (data.Viewport.IsVisible (bbox)) visiblebbox.Union (bbox);
+                if (data.Viewport.IsVisible (bbox))
+                    visiblebbox.Union (bbox);
                 continue;
             }
             // If its bounding box is closest to the camera.
@@ -859,12 +913,12 @@ static class Intersector
                 activebbox = bbox;
             }
             total++;
-
+        
             // `obj.GetMeshes(MeshType.Default)` does not return meshes for block instances.
             // GetRenderMeshes has a different behavior with SubDs
             // https://discourse.mcneel.com/t/rhinoobject-getrendermeshes-bug/151953
             arg[0] = obj;
-            _usedMeshes.AddRange (from oref in Rhino.DocObjects.RhinoObject.GetRenderMeshes (arg, true, false)
+            _usedMeshes.AddRange (from oref in RO.RhinoObject.GetRenderMeshes (arg, true, false)
                                   let m = oref.Mesh ()
                                   where m != null
                                   select m);
@@ -879,28 +933,11 @@ static class Intersector
         data.InfoBBox = new ON.BoundingBox (ray.Position, ray.Position + ray.Direction);
         if (visiblebbox.IsValid) data.InfoBBox.Union (visiblebbox);
 
-        #if USE_BITMAP
-
-        // test the intersections with the meshes.
-        int mindex = _usedMeshes.Count == 0 ? -1 : IdConduit.PickIndex (data.Viewport, _usedMeshes, data.ViewportPoint);
-
-        // Has an intersection with a mesh been found ?
-        if (mindex < 0 || mindex >= _usedMeshes.Count)
-            _usedMeshes.Clear ();
-        else {
-            t = Rhino.Geometry.Intersect.Intersection.MeshRay (_usedMeshes[mindex], ray);
-            _usedMeshes.Clear ();
-            data.Status = IntersectionStatus.OnMesh;
-            data.TargetPoint = ray.PointAt (t);
-        }
-
-        #else
-
         // test the intersections with the meshes.
         double tmin = double.MaxValue;
         System.Threading.Tasks.Parallel.For (0, _usedMeshes.Count, (int i) =>
         {
-            var t = Rhino.Geometry.Intersect.Intersection.MeshRay (_usedMeshes[i], ray);
+            var t = ON.Intersect.Intersection.MeshRay (_usedMeshes[i], ray);
             if (t > 0 && t < tmin) tmin = t; // Is it a good thing to define a shared variable here?
         });
         _usedMeshes.Clear ();
@@ -912,8 +949,6 @@ static class Intersector
             data.TargetPoint = ray.PointAt (tmin);
             return;
         }
-
-        #endif
 
         // Has an intersection with a bounding box been found ?
         if (activebbox.IsValid)
@@ -1136,71 +1171,6 @@ class InfoConduit : RD.DisplayConduit
         }
     }
 }
-
-
-#if USE_BITMAP
-
-class IdConduit : RD.DisplayConduit
-{
-    static IdConduit? g_instance;
-    static RD.DisplayModeDescription? g_viewmode;
-
-    public static void Dispose ()
-    {
-        if (g_instance == null) return;
-        g_instance.Enabled = false;
-        g_instance = null;
-        g_viewmode = null;
-    }
-
-    public static int PickIndex (RD.RhinoViewport viewport, IEnumerable <Mesh> meshes, SD.Point viewportPoint)
-    {
-        if (g_instance == null) 
-            g_instance = new ();
-
-        if (g_viewmode == null)
-        {
-            g_viewmode = RD.DisplayModeDescription.FindByName ("IdConduit_BlankMode"); // IdConduit_BlankMode
-            if (g_viewmode == null) {
-                g_viewmode = RD.DisplayModeDescription.GetDisplayMode (
-                    RD.DisplayModeDescription.ImportFromFile (
-                        System.IO.Path.Combine (typeof (IdConduit).Assembly.Location, "viewmode.ini")
-                    )
-                );
-            }
-        }
-
-        g_instance.Meshes = meshes;
-        g_instance.Enabled = true;
-        var bitmap = viewport.ParentView.CaptureToBitmap (g_viewmode);
-        g_instance.Enabled = false;
-
-        var index = unchecked (bitmap.GetPixel (viewportPoint.X, viewportPoint.Y).ToArgb () & 0xFFFFFF);
-        return index == 0xFFFFFF ? -1 : index-1;
-    }
-
-    public IEnumerable <Mesh>? Meshes;
-
-    IdConduit () { SpaceFilter = Rhino.DocObjects.ActiveSpace.ModelSpace; }
-
-    protected override void DrawOverlay(RD.DrawEventArgs e)
-    {
-        if (Meshes == null) return;
-
-        // Argb(255, 0, 0, 0) to Argb(255, 255, 255, 255)
-        // 0xFF000000 to 0xFFFFFFFF
-
-        var i = 1;
-        foreach (var m in Meshes)
-        {
-            var c = unchecked(0xFF000000 | i);
-            e.Display.DrawMeshShaded (m, new RD.DisplayMaterial (SD.Color.FromArgb ((int)c)));
-            i++;
-        }
-    }
-}
-
-#endif
 
 
 /*/
@@ -2030,6 +2000,8 @@ class CameraController : NavigationListener
 
         VirtualCursor.Init (new (viewportPoint.X, viewportPoint.Y));
 
+        // TODO: Si la touche CapsLock est enfoncée avant le bouton de la souris.
+
         return true;
     }
 
@@ -2070,6 +2042,10 @@ class CameraController : NavigationListener
         InfoConduit.Hide ();
         CameraConduit.hide ();
         VirtualCursor.Hide ();
+
+        // TODO: Si la touche CapsLock est enfoncée avant le bouton de la souris.
+        //       Il n'est pas certain qu'elle ne le soit pas encore ici.
+
         _doc.Views.Redraw ();
     }
 
@@ -2093,7 +2069,8 @@ class CameraController : NavigationListener
         _cam.RotX += -Math.PI*offset.Y/300;
         _cam.RotZ += -Math.PI*offset.X/300;
         _cam.UpdateView ();
-        _doc.Views.Redraw ();
+        // _doc.Views.Redraw ();
+        Data.Viewport.ParentView.Redraw ();
     }
 
     #endregion
@@ -2115,7 +2092,8 @@ class CameraController : NavigationListener
         if (_inplanview) return;
         _cam.Zoom += offset.Y * _zinv * _zforce;
         _cam.UpdateView ();
-        _doc.Views.Redraw ();
+        //_doc.Views.Redraw ();
+        Data.Viewport.ParentView.Redraw ();
     }
 
     #endregion
@@ -2137,7 +2115,8 @@ class CameraController : NavigationListener
         _cam.PanY += offset.Y/_w2sScale;
         VirtualCursor.GrowPosition (offset);
         _cam.UpdateView ();
-        _doc.Views.Redraw ();
+        //_doc.Views.Redraw ();
+        Data.Viewport.ParentView.Redraw ();
     }
 
     #endregion
@@ -2147,7 +2126,7 @@ class CameraController : NavigationListener
 
     const double EPSILON = 1E-15;
 
-    // Vas savoir pourquoi, les CPlane standard sont visibles dans le panneau CPlane mais pas dans l'API.
+    // Allez comprendre pourquoi, les CPlanes standard sont visibles dans le panneau CPlane mais pas dans l'API.
     static ON.Plane[] _defaultCPlanes = {
         new (ON.Point3d.Origin, ON.Vector3d.ZAxis),
         new (ON.Point3d.Origin, ON.Vector3d.YAxis),
@@ -2192,7 +2171,8 @@ class CameraController : NavigationListener
         if (x != 0) { _cam.RotZ += x; _accu.X = 0; }
         
         _cam.UpdateView ();
-        _doc.Views.Redraw ();
+        //_doc.Views.Redraw ();
+        Data.Viewport.ParentView.Redraw ();
     }
 
     void _StopPresetsNavigation ()
