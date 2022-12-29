@@ -787,6 +787,10 @@ class IntersectionData
 
 static class Intersector
 {
+    // TODO:
+    // http://what-when-how.com/advanced-methods-in-computer-graphics/collision-detection-advanced-methods-in-computer-graphics-part-6/
+    // https://discourse.mcneel.com/t/bvh-structure/152651/6
+
     #region Cache
     /*/
         Event stack:
@@ -813,13 +817,13 @@ static class Intersector
         RhinoDoc.DeleteRhinoObject                += _OnDeleteRhinoObject;
     }
 
-    private static void _OnCloseDocument (object sender, RH.DocumentEventArgs e)
+    static void _OnCloseDocument (object sender, RH.DocumentEventArgs e)
     {
         RhinoApp.WriteLine (nameof (_OnCloseDocument));
         _bboxcache.Clear ();
     }
 
-    private static void _OnNewDocument (object sender, RH.DocumentEventArgs e)
+    static void _OnNewDocument (object sender, RH.DocumentEventArgs e)
     {
         RhinoApp.WriteLine (nameof (_OnNewDocument));
         _bboxcache.Clear ();
@@ -844,22 +848,31 @@ static class Intersector
 
     #endregion
 
+    /// <summary>
+    /// Stores meshes whose bounding boxes collide with the mouse cursor.
+    /// </summary>
     readonly static List<ON.Mesh> _usedMeshes = new ();
 
-    static ON.Ray3d _GetMouseRay (RD.RhinoViewport vp)
+    /// <summary>
+    /// Gets the ray line under the mouse from the Frustum near plane to the far plane
+    /// </summary>
+    static ON.Ray3d _GetMouseRay (RD.RhinoViewport vp, SD.Point vpoint)
     {
-        var mp = RUI.MouseCursor.Location;
-        var p = vp.ScreenToClient (new SD.Point ((int)mp.X, (int)mp.Y));
 		vp.GetScreenPort(out var pl, out var _, out var _, out var pt, out var _, out var _);
-        vp.GetFrustumLine (p.X - pl, p.Y - pt, out var line);
+        vp.GetFrustumLine (vpoint.X - pl, vpoint.Y - pt, out var line);
 
         // Visiblement GetFrustumLine retourne une line du point le plus loin au point le plus proche.
         return new ON.Ray3d (line.To, line.From - line.To);
     }
     
+    /// <param name="data">
+    ///     Intersection calculation data.
+    ///     `Viewport` and `ViewportPoint` properties **MUST** be set, other properties will be filled by this function</param>
+    /// <param name="defaultTargetPoint">
+    ///     If no intersection is found, use this point as the target point</param>
     public static void Compute (IntersectionData data, ON.Point3d? defaultTargetPoint = null)
     {
-        var ray = _GetMouseRay (data.Viewport);
+        var ray = _GetMouseRay (data.Viewport, data.ViewportPoint);
         data.Rayline = ray;
         var rayPos = new double[]
         {
@@ -895,7 +908,7 @@ static class Intersector
 
         foreach (var (obj, bbox) in _bboxcache.Values)
         {
-            if (bbox.IsValid == false) continue;
+            if (bbox.IsValid == false || obj.IsHidden) continue;
         
             t = _RayBoxIntersection (rayPos, rayInvDir, bbox);
             if (t < 0)
@@ -995,6 +1008,8 @@ static class Intersector
     }
 
     #region Ray-AABB
+    // peut être amélioré:
+    // https://medium.com/@bromanz/another-view-on-the-classic-ray-aabb-intersection-algorithm-for-bvh-traversal-41125138b525
 
     /// <summary>
     /// same as _RayBoxIntersection but returns the midpoint of the ray line trimmed by the bounding box
@@ -1422,10 +1437,10 @@ class RMBListener : RUI.MouseCallback
 class NavigationListener : RUI.MouseCallback
 {
     const MethodImplOptions INLINE = MethodImplOptions.AggressiveInlining;
-    const int PAUSE_DELAY = 70;
 
 
     public INavigationOptions Options { get; private set; }
+
     public RD.RhinoViewport Viewport { get; private set; }
 
 
@@ -1437,7 +1452,6 @@ class NavigationListener : RUI.MouseCallback
     #nullable enable
 
 
-
     #region Switches
 
     /// <summary>
@@ -1445,13 +1459,16 @@ class NavigationListener : RUI.MouseCallback
     bool _started;
     
     /// <summary>
-    ///     Flag blocking `OnMouseMove` event after `EF.Mouse.Position=...`</summary>
+    ///     Flag blocking `OnMouseMove` event after cursor repositioning</summary>
     bool _lock;
 
+    /// <summary>
+    ///     Flag to temporarily escape the mouse move event. </summary>
     bool _pause;
 
-    [MethodImpl(INLINE)]
-    void _StartPause ()
+    const int PAUSE_DELAY = 70;
+
+    [MethodImpl(INLINE)] void _StartPause ()
     {
         _pause = true;
         System.Threading.Tasks.Task.Delay (PAUSE_DELAY).ContinueWith ((_) => { _pause = false; });
@@ -1478,6 +1495,7 @@ class NavigationListener : RUI.MouseCallback
     #region Modifiers
 
     readonly Action <ED.Point>?[] _actions = new Action <ED.Point> [Enum.GetNames (typeof(ModifierKey)).Length];
+
     readonly object?[] _tags = new object [Enum.GetNames (typeof(ModifierKey)).Length];
 
     /// <summary>
@@ -1495,11 +1513,15 @@ class NavigationListener : RUI.MouseCallback
         _tags[(int)modifier] = tag;
     }
 
+    /// <summary>
+    ///     Returns the action associated with a modifier key. </summary>
     [MethodImpl(INLINE)] Action <ED.Point>? _GetAction (ModifierKey modifier)
     {
         return _actions[(int)modifier] ?? _actions[(int)ModifierKey.None];
     }
 
+    /// <summary>
+    ///     Returns the tag associated with an action. </summary>
     [MethodImpl(INLINE)] object? _GetActionTag (ModifierKey modifier)
     {
         return _tags[(int)modifier] ?? _tags[(int)ModifierKey.None];
@@ -1522,8 +1544,14 @@ class NavigationListener : RUI.MouseCallback
     #endregion
 
 
+    #region Sub classes methods
+
+    /// <summary>
+    ///     Called before activating the mouse listener to know whether to do it or not. </summary>
     public virtual bool CanRun (RUI.MouseCallbackEventArgs e) { return false; }
 
+    /// <summary>
+    ///     Called when the mouse first moves. </summary>
     protected virtual bool OnStartNavigation (RD.RhinoViewport viewport, SD.Point viewportPoint) { return true; }
 
     /// <summary>
@@ -1535,7 +1563,11 @@ class NavigationListener : RUI.MouseCallback
     ///     New active action tag</param>
     protected virtual void OnActionChange (object? previousTag, object? currentTag) { /**/ }
 
+    /// <summary>
+    ///     Called when the right mouse button is up </summary>
     protected virtual void OnStopNavigation () { /**/ }
+
+    #endregion
 
 
     internal void Start (RUI.MouseCallbackEventArgs e)
@@ -1649,6 +1681,20 @@ class NavigationListener : RUI.MouseCallback
 /*/
 
 
+/// <summary>
+/// Provides utility functions to manipulate the camera in view. <br/>
+/// Before each use, this class must be initialized with the 'Init' function
+/// and the initial camera **MUST** be aligned with the horizon (i.e. the `RhinoViewport.CameraX.Z == 0`).
+/// the calculation of transformations is optimized in a single pass in <see cref="_PanTurnMoveZoom"/>
+/// and corresponds to the transformations:
+/// <code>
+///     Scale (camera-target * Zoom)
+///     * Translation (Pos[X|Y|Z])    // Pos[X|Y|Z] is the target point.
+///     * Rotation (RotZ, ZAxis)
+///     * Rotation (RotX, XAxis)
+///     * Translation (Pan[X|Y|Z])
+/// </code>
+/// </summary>
 class Camera
 {
     #nullable disable
@@ -1701,16 +1747,22 @@ class Camera
         }
     }
 
+    /// <summary>
+    ///     Initialize the class before using it </summary>
+    /// <param name="target">
+    ///     The target point of the camera. </param>
     public void Init (RD.RhinoViewport viewport, ON.Point3d target)
     {
         _vp = viewport;
         _vpinfo = new (viewport);
         _target = new (target);
         _vp.SetCameraTarget (_target, updateCameraLocation: false);
-        ApplyCanges ();
+        Reset ();
     }
 
-    public void ApplyCanges ()
+    /// <summary>
+    ///     Recalculate the transforms property of this class from the viewport. </summary>
+    public void Reset ()
     {
         var plane = new ON.Plane (_vp.CameraLocation, _vp.CameraX, _vp.CameraY);
         
@@ -1770,13 +1822,62 @@ class Camera
         }
     }
 
-    public void _PanTurnMoveZoom ()
+    /// <summary>
+    ///     Apply transformations but not redraw the view. </summary>
+    public void ApplyTransforms ()
+    {
+        _PanTurnMoveZoom ();
+
+        // En vue parallele, la position de la camera et le Frustum n'est pas modifier.
+        // ??? Uniquement dans cam.csx, J'igniore pourquoi mais définir le Frustum change la position de la camera. ???
+        if (_vp.IsParallelProjection)
+        {
+            _vpinfo.SetFrustum (
+                _initialSizeX.T0 * (1+_zoomfactor),
+                _initialSizeX.T1 * (1+_zoomfactor),
+                _initialSizeY.T1 * (1+_zoomfactor),
+                _initialSizeY.T0 * (1+_zoomfactor),
+                _vpinfo.FrustumNear,
+                _vpinfo.FrustumFar
+            );
+        }
+
+        var pos = ON.Point3d.Origin;
+        var dir = new ON.Vector3d (0, 0, -1);
+        var up  = ON.Vector3d.YAxis;
+        
+        pos.Transform (_m);
+        dir.Transform (_m);
+        up.Transform (_m);
+        
+        #if DEBUG
+        if (_vpinfo.SetCameraDirection (dir) == false) RhinoApp.WriteLine ("SetCameraDirection == false");
+        if (_vpinfo.SetCameraLocation (pos) == false) RhinoApp.WriteLine ("SetCameraLocation == false");
+        if (_vpinfo.SetCameraUp (up) == false) RhinoApp.WriteLine ("SetCameraUp == false");
+        #else
+        _vpinfo.SetCameraDirection (dir);
+        _vpinfo.SetCameraLocation (pos);
+        _vpinfo.SetCameraUp (up);
+        #endif
+
+        #if false // DEBUG // ??? Renvoie false même si tout semble fonctionné ???
+        if (_vp.SetViewProjection (_vpinfo, updateTargetLocation: true)) RhinoApp.WriteLine ("SetViewProjection == false");
+        #else
+        _vp.SetViewProjection (_vpinfo, updateTargetLocation: true);
+        #endif
+
+    }
+
+    /// <summary>
+    ///     Compute the transformation matrix. </summary>
+    // TODO: Add rotation for walk mode
+    void _PanTurnMoveZoom ()
     {
         var cosX = Math.Cos(RotX);
         var sinX = Math.Sin(RotX);
         var cosZ = Math.Cos(RotZ);
         var sinZ = Math.Sin(RotZ);
-        
+
         // vector X
         _m.M00 = cosZ;
         _m.M10 = sinZ;
@@ -1819,50 +1920,6 @@ class Camera
         }
 
         // Perspectcive and global scale are not touch.
-    }
-
-    public void UpdateView ()
-    {
-        _PanTurnMoveZoom ();
-
-        // En vue parallele, la position de la camera et le Frustum n'est pas modifier.
-        // ??? Uniquement dans cam.csx, J'igniore pourquoi mais définir le Frustum change la position de la camera. ???
-        if (_vp.IsParallelProjection)
-        {
-            _vpinfo.SetFrustum (
-                _initialSizeX.T0 * (1+_zoomfactor),
-                _initialSizeX.T1 * (1+_zoomfactor),
-                _initialSizeY.T1 * (1+_zoomfactor),
-                _initialSizeY.T0 * (1+_zoomfactor),
-                _vpinfo.FrustumNear,
-                _vpinfo.FrustumFar
-            );
-        }
-
-        var pos = ON.Point3d.Origin;
-        var dir = new ON.Vector3d (0, 0, -1);
-        var up  = ON.Vector3d.YAxis;
-        
-        pos.Transform (_m);
-        dir.Transform (_m);
-        up.Transform (_m);
-        
-        #if DEBUG
-        if (_vpinfo.SetCameraDirection (dir) == false) RhinoApp.WriteLine ("SetCameraDirection == false");
-        if (_vpinfo.SetCameraLocation (pos) == false) RhinoApp.WriteLine ("SetCameraLocation == false");
-        if (_vpinfo.SetCameraUp (up) == false) RhinoApp.WriteLine ("SetCameraUp == false");
-        #else
-        _vpinfo.SetCameraDirection (dir);
-        _vpinfo.SetCameraLocation (pos);
-        _vpinfo.SetCameraUp (up);
-        #endif
-
-        #if false // DEBUG // ??? Renvoie false même si tout semble fonctionné ???
-        if (_vp.SetViewProjection (_vpinfo, updateTargetLocation: true)) RhinoApp.WriteLine ("SetViewProjection == false");
-        #else
-        _vp.SetViewProjection (_vpinfo, updateTargetLocation: true);
-        #endif
-
     }
 }
 
@@ -2024,7 +2081,7 @@ class CameraController : NavigationListener
         case NavigationMode.Presets: _StopPresetsNavigation (); break;
         }
         
-        _cam.ApplyCanges ();
+        _cam.Reset ();
         if (currentTag != null)
             VirtualCursor.Show (_GetCursor ((NavigationMode)currentTag));
 
@@ -2068,7 +2125,7 @@ class CameraController : NavigationListener
         if (_inplanview) return;
         _cam.RotX += -Math.PI*offset.Y/300;
         _cam.RotZ += -Math.PI*offset.X/300;
-        _cam.UpdateView ();
+        _cam.ApplyTransforms ();
         // _doc.Views.Redraw ();
         Data.Viewport.ParentView.Redraw ();
     }
@@ -2091,7 +2148,7 @@ class CameraController : NavigationListener
     {
         if (_inplanview) return;
         _cam.Zoom += offset.Y * _zinv * _zforce;
-        _cam.UpdateView ();
+        _cam.ApplyTransforms ();
         //_doc.Views.Redraw ();
         Data.Viewport.ParentView.Redraw ();
     }
@@ -2114,7 +2171,7 @@ class CameraController : NavigationListener
         _cam.PanX += -offset.X/_w2sScale;
         _cam.PanY += offset.Y/_w2sScale;
         VirtualCursor.GrowPosition (offset);
-        _cam.UpdateView ();
+        _cam.ApplyTransforms ();
         //_doc.Views.Redraw ();
         Data.Viewport.ParentView.Redraw ();
     }
@@ -2154,7 +2211,7 @@ class CameraController : NavigationListener
         _cam.RotX = Math.Round (_cam.RotX / _srad) % 8 * _srad;
         _cam.RotZ = Math.Round (_cam.RotZ / _srad) % 8 * _srad;
 
-        _cam.UpdateView ();
+        _cam.ApplyTransforms ();
         _doc.Views.Redraw ();
     }
 
@@ -2170,7 +2227,7 @@ class CameraController : NavigationListener
         if (y != 0) { _cam.RotX += y; _accu.Y = 0; }
         if (x != 0) { _cam.RotZ += x; _accu.X = 0; }
         
-        _cam.UpdateView ();
+        _cam.ApplyTransforms ();
         //_doc.Views.Redraw ();
         Data.Viewport.ParentView.Redraw ();
     }
@@ -2188,18 +2245,18 @@ class CameraController : NavigationListener
             var cnormal = plane.Normal;
             cnormal.Unitize ();
 
+
             if (cnormal.EpsilonEquals (bnormal, EPSILON) == false &&
                 cnormal.EpsilonEquals (inormal, EPSILON) == false
             ) continue;
 
             Viewport.SetConstructionPlane (plane);
+
             // TODO: Réaligner la caméra pour supprimer le bruit.
             // var cosZ = Math.Acos (plane.ZAxis.Z);
             // _cam.RotX = plane.YAxis.Z < 0 ? -cosZ : cosZ;
             // var cosY = Math.Acos (plane.XAxis.X);
             // _cam.RotZ = plane.XAxis.Y < 0 ? -cosY : cosY;
-            // // _cam.RotZ = Math.Asin (cnormal.X);
-            // // _cam.RotX = Math.Acos (cnormal.Z);
             // _cam.UpdateView ();
             // _doc.Views.Redraw ();
             return;

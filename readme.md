@@ -105,14 +105,7 @@ peut-être est-il possible de limiter la boîte englobante de l'objet à la zone
 Remarques techniques
 --------------------
 
-La méthode de sélection d'objets à l'aide d'une carte d'IDs permet de calculer plus rapidement les intersections et donc d'augmenter la fluidité de la navigation. Cependant, je n'ai pas trouvé d'implémentation appropriée avec l'API Rhino (voir https://discourse.mcneel.com/t/ids-buffer/152092). Sur ma machine, les gains de performances apparaissent lorsque le nombre de faces à tester devient supérieur à 1 million de faces.
-
-- Pour 65 000 faces, le gain de `Parallel.For(Intersection.MeshRay)` est d'environ 33 % par rapport à `IdConduit`
-- Pour 1.5 millions de faces, `IdConduit` est plus rapide que `Parallel.For(...)` d'environ 30% ou 40%.
-- Pour 5.9 millions de faces, les valeurs ne changent pas, `IdConduit` est plus rapide de 30/40%.
-
-Dans l'état actuel, le test à l'aide d'une carte d'IDs est désactivé.
-Les cas où les objets sous le curseur de la souris créent plus d'un million de faces me semblent plutôt rares. `Parallel.For(Intersection.Mesh Ray)` fonctionne bien dans la plupart des cas.
+Navigation par défaut de Rhino:
 
 <table>
 

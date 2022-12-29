@@ -42,7 +42,7 @@
         <StartProgram>C:\Program Files\Rhino 7\System\Rhino.exe</StartProgram>
         <StartArguments></StartArguments>
         <StartAction>Program</StartAction>
-        <NoWarn>1701;1702;1591</NoWarn>
+        <NoWarn>1701;1702;1591;1573</NoWarn>
     </PropertyGroup>
   
     <PropertyGroup Condition="$(Configuration) == 'Release'">
