@@ -1,9 +1,13 @@
-﻿#define WIN32
+﻿/*/
+    Vrecq Jean-marie
+    2022/12
+    Attribution 4.0 International (CC BY 4.0)
 /*/
-    I could have made this plugin portable on MacOS:
-    - If it was possible to make the command line not intercept keyboard input.
-    - if I could with API hide/show mouse cursor in a view.
-/*/
+
+
+// The Rhino API has no method to show or hide the cursor and does not allow full control of keyboard events.
+// To make this plugin compatible with MacOS it is necessary to implement the functions surrounded by this macro.
+#define WIN32
 
 
 using System;
@@ -32,6 +36,8 @@ using RhinoDoc = Rhino.RhinoDoc;
 using RhinoApp = Rhino.RhinoApp;
 using RhinoViewSettings = Rhino.ApplicationSettings.ViewSettings;
 using System.Security.Cryptography;
+using Rhino.Geometry.Intersect;
+using Rhino.Geometry;
 
 
 /*/
@@ -48,7 +54,7 @@ using System.Security.Cryptography;
 #if RHP
 
 
-[assembly: System.Runtime.InteropServices.Guid ("45d93b79-52d5-4ee8-bfba-ee4816bf0080")]
+[assembly: Guid ("45d93b79-52d5-4ee8-bfba-ee4816bf0080")]
 
 [assembly: RP.PlugInDescription (RP.DescriptionType.Country, "France")]
 [assembly: RP.PlugInDescription (RP.DescriptionType.Organization, "Vrecq Jean-marie")]
@@ -161,6 +167,10 @@ class Main
         {
         case nameof (Options.Active):
             _mouse.Enabled = Options.Active;
+            IntersectionConduit.Hide ();
+            CameraConduit.hide ();
+            VirtualCursor.Hide ();
+            Cursor.ShowCursor ();
             break;
         }
     }
@@ -792,6 +802,15 @@ static class Intersector
     // https://discourse.mcneel.com/t/bvh-structure/152651/6
 
     #region Cache
+
+    /*/
+        Optimizing intersection computation is important with managed code-side storage of object information.
+        But this has a cost when creating, deleting or modifying objects.
+        Moving 1000 objects at once will take longer than Rhino's default behavior.
+    /*/
+
+    static readonly Dictionary<Guid, (ON.Mesh[] Meshes, ON.BoundingBox BBox, bool IsVisible, bool IsValid)> _cache = new ();
+
     /*/
         Event stack:
 
@@ -807,55 +826,98 @@ static class Intersector
         !!! Except _OnNewDocument, no event is called when the application starts without opening an existing file. !!!
     /*/
 
-    static Dictionary<Guid, (RO.RhinoObject Obj, ON.BoundingBox BBox)> _bboxcache = new ();
-
     public static void AttachEvents ()
     {
-        RhinoDoc.CloseDocument                    += _OnCloseDocument;
-        RhinoDoc.NewDocument                      += _OnNewDocument;
-        RhinoDoc.AddRhinoObject                   += _OnAddRhinoObject;
-        RhinoDoc.DeleteRhinoObject                += _OnDeleteRhinoObject;
+        RhinoDoc.CloseDocument          += _OnCloseDocument;
+        RhinoDoc.NewDocument            += _OnNewDocument;
+        RhinoDoc.AddRhinoObject         += _OnAddRhinoObject;
+        RhinoDoc.DeleteRhinoObject      += _OnDeleteRhinoObject;
+        RhinoDoc.ModifyObjectAttributes += _OnModifyObjectAttributes;
+        RhinoDoc.UndeleteRhinoObject    += _OnUndeleteRhinoObject;
+
+        RhinoApp.Closing += _OnAppClosing;
+    }
+
+    public static void _DetachEvents ()
+    {
+        RhinoDoc.CloseDocument          -= _OnCloseDocument;
+        RhinoDoc.NewDocument            -= _OnNewDocument;
+        RhinoDoc.AddRhinoObject         -= _OnAddRhinoObject;
+        RhinoDoc.DeleteRhinoObject      -= _OnDeleteRhinoObject;
+        RhinoDoc.ModifyObjectAttributes -= _OnModifyObjectAttributes;
+        RhinoDoc.UndeleteRhinoObject    -= _OnUndeleteRhinoObject;
+    }
+
+    private static void _OnAppClosing (object sender, EventArgs e)
+    {
+        _DetachEvents ();
     }
 
     static void _OnCloseDocument (object sender, RH.DocumentEventArgs e)
     {
-        RhinoApp.WriteLine (nameof (_OnCloseDocument));
-        _bboxcache.Clear ();
+        // RhinoApp.WriteLine (nameof (_OnCloseDocument));
+        _cache.Clear ();
     }
 
     static void _OnNewDocument (object sender, RH.DocumentEventArgs e)
     {
-        RhinoApp.WriteLine (nameof (_OnNewDocument));
-        _bboxcache.Clear ();
+        // RhinoApp.WriteLine (nameof (_OnNewDocument));
+        _cache.Clear ();
     }
 
     static void _OnDeleteRhinoObject (object sender, RO.RhinoObjectEventArgs e)
     {
         // RhinoApp.WriteLine (nameof (_OnDeleteRhinoObject));
-        _bboxcache.Remove (e.ObjectId);
+        _cache.Remove (e.ObjectId);
     }
 
     static void _OnAddRhinoObject (object sender, RO.RhinoObjectEventArgs e)
     {
         // RhinoApp.WriteLine (nameof (_OnAddRhinoObject));
-        // var bbox = e.TheObject.Geometry.GetBoundingBox (accurate: false);
-        // if (bbox.IsValid == false) return;
-        _bboxcache[e.ObjectId] = (
-            e.TheObject,
-            e.TheObject.Geometry.GetBoundingBox (accurate: false)
+        _AddCache (e.TheObject);
+    }
+
+    static void _OnUndeleteRhinoObject (object sender, RO.RhinoObjectEventArgs e)
+    {
+        // RhinoApp.WriteLine (nameof (_OnUndeleteRhinoObject));
+        _AddCache (e.TheObject);
+    }
+
+    static void _OnModifyObjectAttributes (object sender, RO.RhinoModifyObjectAttributesEventArgs e)
+    {
+        // RhinoApp.WriteLine (nameof (_OnModifyObjectAttributes));
+        var item = _cache[e.RhinoObject.Id];
+        item.IsVisible = e.NewAttributes.Visible;
+        _cache[e.RhinoObject.Id] = item;
+    }
+
+    static void _AddCache (RO.RhinoObject obj)
+    {
+        var bbox = obj.Geometry.GetBoundingBox (accurate: false);
+        _cache[obj.Id] = (
+            // `obj.GetMeshes(MeshType.Default)` does not return meshes for block instances.
+            // GetRenderMeshes has a different behavior with SubDs
+            // https://discourse.mcneel.com/t/rhinoobject-getrendermeshes-bug/151953
+            Meshes: (from oref in RO.RhinoObject.GetRenderMeshes (new [] { obj }, true, false)
+                     let m = oref.Mesh ()
+                     where m != null
+                     select m).ToArray (),
+            BBox: bbox,
+            IsVisible: obj.Attributes.Visible,
+            IsValid: bbox.IsValid
         );
     }
 
     #endregion
 
+    #region Main functions
+
     /// <summary>
-    /// Stores meshes whose bounding boxes collide with the mouse cursor.
-    /// </summary>
+    ///     Stores meshes whose bounding boxes collide with the mouse cursor. </summary>
     readonly static List<ON.Mesh> _usedMeshes = new ();
 
     /// <summary>
-    /// Gets the ray line under the mouse from the Frustum near plane to the far plane
-    /// </summary>
+    ///     Gets the ray line under the mouse from the Frustum near plane to the far plane </summary>
     static ON.Ray3d _GetMouseRay (RD.RhinoViewport vp, SD.Point vpoint)
     {
 		vp.GetScreenPort(out var pl, out var _, out var _, out var pt, out var _, out var _);
@@ -872,6 +934,10 @@ static class Intersector
     ///     If no intersection is found, use this point as the target point</param>
     public static void Compute (IntersectionData data, ON.Point3d? defaultTargetPoint = null)
     {
+        #if DEBUG
+        _TestCacheObjects (data.Viewport.ParentView.Document);
+        #endif
+
         var ray = _GetMouseRay (data.Viewport, data.ViewportPoint);
         data.Rayline = ray;
         var rayPos = new double[]
@@ -892,24 +958,14 @@ static class Intersector
         ON.BoundingBox visiblebbox = ON.BoundingBox.Unset;
         double t;
         double tbboxmin = 1.1;
-        var arg = new RO.RhinoObject[1];
-
-        #if DEBUG
-        if (data.Viewport.ParentView.Document.Objects.Count != _bboxcache.Count)
-            RhinoApp.WriteLine (
-                "Document.Objects.Count != _bboxcache.Count"+
-                "\n  count: "+ data.Viewport.ParentView.Document.Objects.Count+
-                "\n  cache: "+_bboxcache.Count
-            );
-        #endif
 
         if (data.Viewport.ParentView.Document.Objects.Count < _usedMeshes.Capacity)
             _usedMeshes.Capacity = data.Viewport.ParentView.Document.Objects.Count;
 
-        foreach (var (obj, bbox) in _bboxcache.Values)
+        foreach (var (obj, bbox, isvisible, isvalid) in _cache.Values)
         {
-            if (bbox.IsValid == false || obj.IsHidden) continue;
-        
+            if (isvalid == false || isvisible == false) continue;
+
             t = _RayBoxIntersection (rayPos, rayInvDir, bbox);
             if (t < 0)
             {
@@ -925,14 +981,7 @@ static class Intersector
             }
             total++;
         
-            // `obj.GetMeshes(MeshType.Default)` does not return meshes for block instances.
-            // GetRenderMeshes has a different behavior with SubDs
-            // https://discourse.mcneel.com/t/rhinoobject-getrendermeshes-bug/151953
-            arg[0] = obj;
-            _usedMeshes.AddRange (from oref in RO.RhinoObject.GetRenderMeshes (arg, true, false)
-                                  let m = oref.Mesh ()
-                                  where m != null
-                                  select m);
+            _usedMeshes.AddRange (obj);
         }
 
         data.ObjectCount = total;
@@ -1006,6 +1055,8 @@ static class Intersector
             return ON.Vector3d.Multiply (plane.Origin - ray.Position, plane.Normal) / ON.Vector3d.Multiply (plane.Normal, ray.Direction);
         }
     }
+
+    #endregion
 
     #region Ray-AABB
     // peut être amélioré:
@@ -1111,6 +1162,34 @@ static class Intersector
         #else
         RhinoApp.WriteLine ("Get Point " + _sw!.ElapsedMilliseconds + "ms for " + data.ObjectCount + " object(s).");
         #endif
+    }
+
+    static readonly RO.ObjectEnumeratorSettings _enumopts = new () {
+            DeletedObjects        = false,
+            NormalObjects         = true,
+            HiddenObjects         = true,
+            LockedObjects         = true,
+            // IncludeGrips          = false,
+            // IncludeLights         = false,
+            // SubObjectSelected     = false,
+            // ActiveObjects         = true,
+            IdefObjects           = true,
+            // IncludePhantoms       = true,    // ???
+            // ReferenceObjects      = true,
+            // SelectedObjectsFilter = true,
+            // VisibleFilter         = true
+    };
+
+    static void _TestCacheObjects (RhinoDoc doc)
+    {
+        var count = doc.Objects.ObjectCount (_enumopts);
+        RhinoApp.WriteLine ("Objects.Count: " + count);
+
+        if (count != _cache.Count) RhinoApp.WriteLine (
+            "Document.Objects.Count != _bboxcache.Count" +
+            "\n  count: " + count + //doc.Objects.Count +
+            "\n  cache: " + _cache.Count
+        );
     }
 
     #endregion
@@ -1276,6 +1355,8 @@ static class Keyboard
 /*/
 
 
+/// <summary>
+///     Utility class to manage the system cursor. </summary>
 static class Cursor
 {
     #if WIN32
@@ -1332,6 +1413,8 @@ static class Cursor
 enum VirtualCursorIcon { Hand, Glass, Pivot, None }
 
 
+/// <summary>
+///     Class to draw a replacement cursor in the viewport. </summary>
 class VirtualCursor : RD.DisplayConduit
 {
     static VirtualCursor? g_instance;
@@ -1922,6 +2005,8 @@ class Camera
 }
 
 
+/// <summary>
+///     For visual debugging (show camera with Grasshopper or native objects, change camera). </summary>
 class CameraConduit : RD.DisplayConduit
 {
     static CameraConduit? g_instance;
@@ -2007,8 +2092,9 @@ class CameraController : NavigationListener
         }
 
         // TODO:
-        if (e.View.Document.Objects.GetSelectedObjects (includeLights: true, includeGrips: true).Count () > 0)
-            return false;
+        if (Keyboard.GetCurrentModifier () == ModifierKey.None &&
+            e.View.Document.Objects.GetSelectedObjects (includeLights: true, includeGrips: true).Count () > 0
+        ) return false;
 
         return true;
     }
@@ -2277,8 +2363,9 @@ class CameraController : NavigationListener
 
 /*/
 ISSUE:
-    Parfois l'événement de la souris n'est pas déclencher.
-    Dans ces cas là le comportement par default de navigation deviens donc actif.
+    - Parfois l'événement de la souris n'est pas déclencher.
+      Dans ces cas là le comportement par default de navigation deviens donc actif.
+    - les objets avec des manifold edges ne sont pas intersectéé.
 link:
-- https://patorjk.com/software/taag/#p=display&f=ANSI%20Regular&t=camera
+- https://patorjk.com/software/taag/#p=display&f=ANSI%20Regular
 /*/
