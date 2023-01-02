@@ -11,7 +11,7 @@ Installation
 ------------
 
 
-Ce plugin est sur le serveur Yak et s'appelle `AutoCameraTarget` (La version actuelle est la 2.0.0).
+Ce plugin est sur le serveur Yak et s'appelle `AutoCameraTarget` (La version actuelle est la 2.0.2).
 
 ![Toggle debug mode](./doc/yak.png)
 
