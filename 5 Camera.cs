@@ -7,7 +7,6 @@
 
 using System;
 using System.Linq;
-
 using SD = System.Drawing;
 
 using ED = Eto.Drawing;
@@ -19,10 +18,9 @@ using RUI = Rhino.UI;
 using RhinoDoc = Rhino.RhinoDoc;
 using RhinoApp = Rhino.RhinoApp;
 
+
 #if RHP
-
 namespace Libx.Fix.AutoCameraTarget;
-
 #endif
 
 
@@ -326,6 +324,8 @@ class CameraController : NavigationListener
 
     RhinoDoc _doc;
 
+    public NavigationOptions Options { get; private set; }
+
     public readonly IntersectionData Data;
 
     readonly Camera _cam;
@@ -334,8 +334,9 @@ class CameraController : NavigationListener
 
 
     # nullable disable // _doc
-    public CameraController (INavigationOptions options, IntersectionData data) : base (options)
+    public CameraController (NavigationOptions options, IntersectionData data)
     {
+        Options = options;
         Data = data;
         _cam = new ();
     }
@@ -452,11 +453,14 @@ class CameraController : NavigationListener
 
     VirtualCursorIcon _GetCursor (NavigationMode modifier)
     {
-        if (NavigationMode.Pan == modifier) return VirtualCursorIcon.Hand;
-        if (NavigationMode.Rotate == modifier) return VirtualCursorIcon.Pivot;
-        if (NavigationMode.Zoom == modifier) return VirtualCursorIcon.Glass;
-        // TODO: PresetsModifier
-        return VirtualCursorIcon.None;
+        return modifier switch 
+        {
+            NavigationMode.Pan     => VirtualCursorIcon.Hand,
+            NavigationMode.Rotate  => VirtualCursorIcon.Pivot,
+            NavigationMode.Zoom    => VirtualCursorIcon.Glass,
+            NavigationMode.Presets => VirtualCursorIcon.Axis,
+            _ => VirtualCursorIcon.None
+        };
     }
 
     #endregion
@@ -590,7 +594,6 @@ class CameraController : NavigationListener
             var cnormal = plane.Normal;
             cnormal.Unitize ();
 
-
             if (cnormal.EpsilonEquals (bnormal, EPSILON) == false &&
                 cnormal.EpsilonEquals (inormal, EPSILON) == false
             ) continue;
@@ -606,19 +609,19 @@ class CameraController : NavigationListener
             // _doc.Views.Redraw ();
             return;
         }
-        foreach (var cplane in _doc.NamedConstructionPlanes)
-        {
-            var cnormal = cplane.Plane.Normal;
-            cnormal.Unitize ();
-
-            if (cnormal.CompareTo (bnormal) == 0 == false &&
-                cnormal.CompareTo (inormal) == 0 == false
-            ) continue;
-
-            Viewport.SetConstructionPlane (cplane);
-            // TODO: Réaligner la caméra pour supprimer le bruit.
-            return;
-        }
+        // foreach (var cplane in _doc.NamedConstructionPlanes)
+        // {
+        //     var cnormal = cplane.Plane.Normal;
+        //     cnormal.Unitize ();
+        // 
+        //     if (cnormal.CompareTo (bnormal) == 0 == false &&
+        //         cnormal.CompareTo (inormal) == 0 == false
+        //     ) continue;
+        // 
+        //     Viewport.SetConstructionPlane (cplane);
+        //     // TODO: Réaligner la caméra pour supprimer le bruit.
+        //     return;
+        // }
     }
 
     #endregion

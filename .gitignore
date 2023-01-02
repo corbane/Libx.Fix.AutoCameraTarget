@@ -10,3 +10,10 @@
 /bin
 /csx
 /old
+
+/yak/**/*.rhp
+/yak/**/*.pdb
+/yak/**/*.rui
+/yak/**/*.xml
+/yak/**/*.png
+/yak/**/*.yml

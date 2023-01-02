@@ -7,7 +7,6 @@
 
 using System.Collections.Generic;
 using System.Linq;
-
 using SD = System.Drawing;
 
 using ON = Rhino.Geometry;
@@ -15,11 +14,17 @@ using RD = Rhino.Display;
 using RO = Rhino.DocObjects;
 using RhinoApp = Rhino.RhinoApp;
 
+
 #if RHP
-
 namespace Libx.Fix.AutoCameraTarget;
-
 #endif
+
+
+interface IIntersectionOptions : IOptions
+{
+    public bool Marker { get; }
+    public bool Debug { get; }
+}
 
 
 enum IntersectionStatus
@@ -119,11 +124,7 @@ static class Intersector
     // http://what-when-how.com/advanced-methods-in-computer-graphics/collision-detection-advanced-methods-in-computer-graphics-part-6/
     // https://discourse.mcneel.com/t/bvh-structure/152651/6
 
-    #region Cache
-
-    #endregion
-
-    #region Main functions
+    #region Main Functions
 
     /// <summary>
     ///     Stores meshes whose bounding boxes collide with the mouse cursor. </summary>
@@ -133,8 +134,9 @@ static class Intersector
     ///     Gets the ray line under the mouse from the Frustum near plane to the far plane </summary>
     static ON.Ray3d _GetMouseRay (RD.RhinoViewport vp, SD.Point vpoint)
     {
-		vp.GetScreenPort(out var pl, out var _, out var _, out var pt, out var _, out var _);
-        vp.GetFrustumLine (vpoint.X - pl, vpoint.Y - pt, out var line);
+		// vp.GetScreenPort(out var pl, out var _, out var _, out var pt, out var _, out var _);
+        // vp.GetFrustumLine (vpoint.X - pl, vpoint.Y - pt, out var line);
+        vp.GetFrustumLine (vpoint.X, vpoint.Y, out var line);
 
         // Visiblement GetFrustumLine retourne une line du point le plus loin au point le plus proche.
         return new ON.Ray3d (line.To, line.From - line.To);
@@ -147,11 +149,6 @@ static class Intersector
     ///     If no intersection is found, use this point as the target point</param>
     public static void Compute (IntersectionData data, ON.Point3d? defaultTargetPoint = null)
     {
-        #if DEBUG
-        // _TestCacheObjects (data.Viewport.ParentView.Document);
-        Cache.TestCacheObjects (data.Viewport.ParentView.Document);
-        #endif
-
         var ray = _GetMouseRay (data.Viewport, data.ViewportPoint);
         data.Rayline = ray;
         var rayPos = new double[]
@@ -176,10 +173,9 @@ static class Intersector
         if (data.Viewport.ParentView.Document.Objects.Count < _usedMeshes.Capacity)
             _usedMeshes.Capacity = data.Viewport.ParentView.Document.Objects.Count;
 
-        // foreach (var (obj, bbox, isvisible, isvalid) in _cache.Values)
-        foreach (var (obj, bbox, isvisible, isvalid) in Cache.Items)
+        foreach (var (meshes, bbox) in Cache.Items)
         {
-            if (isvalid == false || isvisible == false) continue;
+            if (bbox.IsValid == false) continue;
 
             t = _RayBoxIntersection (rayPos, rayInvDir, bbox);
             if (t < 0)
@@ -196,7 +192,8 @@ static class Intersector
             }
             total++;
         
-            _usedMeshes.AddRange (obj);
+            if (meshes != null)
+                _usedMeshes.AddRange (meshes);
         }
 
         data.ObjectCount = total;
@@ -378,35 +375,6 @@ static class Intersector
         RhinoApp.WriteLine ("Get Point " + _sw!.ElapsedMilliseconds + "ms for " + data.ObjectCount + " object(s).");
         #endif
     }
-
-    // static readonly RO.ObjectEnumeratorSettings _enumopts = new () {
-    //         DeletedObjects        = false,
-    //         // NormalObjects         = true,
-    //         HiddenObjects         = true,
-    //         LockedObjects         = true,
-    //         // IncludeGrips          = false,
-    //         // IncludeLights         = false,
-    //         // SubObjectSelected     = false,
-    //         // ActiveObjects         = true,
-    //         // IdefObjects           = true,
-    //         IncludePhantoms       = true,    // ???
-    //         // ReferenceObjects      = true,
-    //         // SelectedObjectsFilter = true,
-    //         // VisibleFilter         = true,
-    //         ObjectTypeFilter = RO.ObjectType.AnyObject
-    // };
-
-    // static void _TestCacheObjects (RhinoDoc doc)
-    // {
-    //     var count = doc.Objects.ObjectCount (_enumopts);
-    //     RhinoApp.WriteLine ("Objects.Count: " + count);
-
-    //     if (count != _cache.Count) RhinoApp.WriteLine (
-    //         "Document.Objects.Count != _bboxcache.Count" +
-    //         "\n  count: " + count + //doc.Objects.Count +
-    //         "\n  cache: " + _cache.Count
-    //     );
-    // }
 
     #endregion
 }

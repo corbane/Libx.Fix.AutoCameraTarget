@@ -1,10 +1,21 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+    <!-- Project -->
+    
     <PropertyGroup>
         <AssemblyTitle>AutoCameraTarget</AssemblyTitle>
-        <Version>2.0.1</Version>
+        <Version>2.0.2</Version>
         <Description>this plugin interpret the `Ctrl+Shift+RMB` keys as the default navigation behavior.</Description>
     </PropertyGroup>
+    
+    <ItemGroup>
+        <Compile Remove="old\**\*" />
+        <Compile Remove="csx\**\*" />
+        <Compile Remove="doc\**\*" />
+        <Compile Remove="yak\**\*" />
+    </ItemGroup>
+
+    <!-- Language -->
     
     <PropertyGroup>
         <TargetFramework>net48</TargetFramework>
@@ -13,24 +24,29 @@
         <DefineConstants>RHP</DefineConstants>
     </PropertyGroup>
 
+    <!-- Ressources -->
+    
     <ItemGroup>
         <EmbeddedResource Include="ico\**\*.ico" />
         <EmbeddedResource Include="ico\**\*.png" />
     </ItemGroup>
-
+    
     <ItemGroup>
-        <Compile Remove="old\**\*" />
-        <Compile Remove="csx\**\*" />
-        <Compile Remove="doc\**\*" />
-        <Compile Remove="yak\**\*" />
+      <None Update="Libx.Fix.AutoCameraTarget.rui">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
-
+  
+    <!-- References -->
+    
     <ItemGroup>
         <Reference Private="False" Include="Eto" HintPath="C:\Program Files\Rhino 7\System\Eto.dll" />
         <Reference Private="False" Include="RhinoCommon" HintPath="C:\Program Files\Rhino 7\System\RhinoCommon.dll" />
         <Reference Private="False" Include="Rhino.UI" HintPath="C:\Program Files\Rhino 7\System\Rhino.UI.dll" />
     </ItemGroup>
-  
+    
+    <!-- Builds -->
+    
     <PropertyGroup>
         <OutputType>Library</OutputType>
         <TargetExt>.rhp</TargetExt>

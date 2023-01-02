@@ -5,7 +5,7 @@
 /*/
 
 
-// The Rhino API has no method to show or hide the cursor and does not allow full control of keyboard events.
+// The Rhino API does not allow full control of keyboard events.
 // To make this plugin compatible with MacOS it is necessary to implement the functions surrounded by this macro.
 #define WIN32
 
@@ -15,18 +15,17 @@ using System.Runtime.InteropServices;
 
 using EF = Eto.Forms;
 
+
 #if RHP
-
 namespace Libx.Fix.AutoCameraTarget;
-
 #endif
 
 
 
-enum ModifierKey { Ctrl, Shift, Alt, Capital, None }
+public enum ModifierKey { Ctrl, Shift, Alt, Capital, None }
 
 
-static class Keyboard
+public static class Keyboard
 {
     static bool _capslock;
 

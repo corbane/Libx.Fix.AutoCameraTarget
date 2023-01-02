@@ -7,7 +7,6 @@
 
 using System;
 using System.Runtime.CompilerServices;
-
 using SD = System.Drawing;
 
 using ED = Eto.Drawing;
@@ -15,12 +14,10 @@ using ED = Eto.Drawing;
 using RD = Rhino.Display;
 using RUI = Rhino.UI;
 
+
 #if RHP
-
 namespace Libx.Fix.AutoCameraTarget;
-
 #endif
-
 
 
 /// <summary>
@@ -47,15 +44,12 @@ class NavigationListener : RUI.MouseCallback
     const MethodImplOptions INLINE = MethodImplOptions.AggressiveInlining;
 
 
-    public INavigationOptions Options { get; private set; }
-
     public RD.RhinoViewport Viewport { get; private set; }
 
 
     #nullable disable // Viewport
-    public NavigationListener (INavigationOptions options)
+    public NavigationListener ()
     {
-        Options = options;
     } 
     #nullable enable
 
@@ -76,7 +70,7 @@ class NavigationListener : RUI.MouseCallback
 
     const int PAUSE_DELAY = 70;
 
-    [MethodImpl(INLINE)] void _StartPause ()
+    [MethodImpl(INLINE)] protected void StartPause ()
     {
         _pause = true;
         System.Threading.Tasks.Task.Delay (PAUSE_DELAY).ContinueWith ((_) => { _pause = false; });
@@ -241,7 +235,7 @@ class NavigationListener : RUI.MouseCallback
         {
             OnActionChange (_GetActionTag(amodifier), _GetActionTag(cmodifier));
             _SetActiveModifier (cmodifier);
-            _StartPause ();
+            StartPause ();
         }
 
         // Is there a change of action ?

@@ -18,50 +18,142 @@ using RH = Rhino;
 using RUI = Rhino.UI;
 using RhinoViewSettings = Rhino.ApplicationSettings.ViewSettings;
 
+
 #if RHP
-
 namespace Libx.Fix.AutoCameraTarget;
-
 #endif
 
 
-interface IOptions : INotifyPropertyChanged
+public interface IOptions : INotifyPropertyChanged
 {
     public int DataVersion { get; }
 }
 
 
-interface INavigationOptions : IOptions
+public class BaseOptions : IOptions
 {
-    public bool Debug { get; }
-    public bool Marker { get; }
-    public bool ShowCamera { get; }
+    #region Event
 
-    public ModifierKey PanModifier { get; }
+    public virtual event PropertyChangedEventHandler? PropertyChanged;
 
-    public ModifierKey RotateModifier { get; }
+    protected virtual void Emit ([CallerMemberName] string? memberName = null)
+    {
+        PropertyChanged?.Invoke (this, new PropertyChangedEventArgs (memberName));
+    }
 
-    public ModifierKey ZoomModifier { get; }
-    public double ZoomForce { get; }
-    public bool ReverseZoom { get; }
+    #endregion
 
-    public ModifierKey PresetsModifier { get; }
-    public bool ParallelPresets { get; }
-    public int PresetSteps { get; }
-    public double PresetForce { get; }
-    public bool PresetsInPlanView { get; }
-    public bool PresetsAlignCPlane { get; }
+
+    #region Helpers
+
+    class ExcludeAttribute : Attribute { }
+
+    [Exclude]
+    public int DataVersion { get; private set; }
+
+    protected void _Set <T> (ref T member, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (object.Equals (member, value)) return;
+        member = value;
+        DataVersion++;
+        Emit (propertyName);
+    }
+
+    public T Copy <T> () where T : new()
+    {
+        var data = new T ();
+
+        var props = from p in GetType ().GetProperties ()
+                    where p.SetMethod != null
+                    where p.GetCustomAttribute <ExcludeAttribute> () == null
+                    select p;
+
+        foreach (var p in props)
+            p.SetValue (data, p.GetValue (this));
+
+        return data;
+    }
+
+    public void Apply (BaseOptions data)
+    {
+        var props = from p in GetType ().GetProperties ()
+                    where p.SetMethod != null
+                    where p.GetCustomAttribute <ExcludeAttribute> () == null
+                    select p;
+
+        foreach (var p in props)
+            p.SetValue (this, p.GetValue (data));
+    }
+    
+    public void Save (RH.PersistentSettings settings)
+    {
+        var t_bool   = typeof (bool);
+        var t_int    = typeof (int);
+        var t_double = typeof (double);
+        var t_modkey = typeof (ModifierKey);
+
+        var props = from p in GetType ().GetProperties ()
+                    where p.SetMethod != null
+                    where p.GetCustomAttribute <ExcludeAttribute> () == null
+                    select p;
+
+        foreach (var p in props)
+        {
+            var t = p.PropertyType;
+
+            if (t == t_modkey)
+                settings.SetEnumValue <ModifierKey> (p.Name, (ModifierKey)p.GetValue (this));
+
+            else if (t == t_bool)
+                settings.SetBool (p.Name, (bool)p.GetValue (this));
+            
+            else if (t == t_int)
+                settings.SetInteger (p.Name, (int)p.GetValue (this));
+            
+            else if (t == t_double)
+                settings.SetDouble (p.Name, (double)p.GetValue (this));
+        }
+    }
+
+    public void Load (RH.PersistentSettings settings)
+    {
+
+        var t_bool   = typeof (bool);
+        var t_int    = typeof (int);
+        var t_double = typeof (double);
+        var t_modkey = typeof (ModifierKey);
+
+        var props = from p in GetType ().GetProperties ()
+                    where p.SetMethod != null
+                    where p.GetCustomAttribute <ExcludeAttribute> () == null
+                    select p;
+
+        var keys = settings.Keys;
+        foreach (var p in props)
+        {
+            if (keys.Contains (p.Name) == false) continue;
+
+            var t = p.PropertyType;
+
+            if (t == t_modkey)
+                p.SetValue (this, settings.GetEnumValue <ModifierKey> (p.Name));
+
+            else if (t == t_bool)
+                p.SetValue (this, settings.GetBool (p.Name));
+            
+            else if (t == t_int)
+                p.SetValue (this, settings.GetInteger (p.Name));
+            
+            else if (t == t_double)
+                p.SetValue (this, settings.GetDouble (p.Name));
+        }
+    }
+
+    #endregion
 }
 
 
-interface IIntersectionOptions : IOptions
-{
-    public bool Marker { get; }
-    public bool Debug { get; }
-}
-
-
-class NavigationOptions : IIntersectionOptions, INavigationOptions
+class NavigationOptions : BaseOptions, IIntersectionOptions
 {
     bool _active;
     public bool Active { get => _active; set { _Set (ref _active, value); } }
@@ -141,126 +233,6 @@ class NavigationOptions : IIntersectionOptions, INavigationOptions
     public bool PresetsAlignCPlane { get => _scplane;  set { _Set (ref _scplane, value);  } }
 
     #endregion
-
-
-    #region Event
-
-    public virtual event PropertyChangedEventHandler? PropertyChanged;
-
-    protected virtual void Emit ([CallerMemberName] string? memberName = null)
-    {
-        PropertyChanged?.Invoke (this, new PropertyChangedEventArgs (memberName));
-    }
-
-    #endregion
-
-
-    #region Helpers
-
-    class ExcludeAttribute : Attribute { }
-
-    [Exclude]
-    public int DataVersion { get; private set; }
-
-    void _Set <T> (ref T member, T value, [CallerMemberName] string? propertyName = null)
-    {
-        if (object.Equals (member, value)) return;
-        member = value;
-        DataVersion++;
-        Emit (propertyName);
-    }
-
-    public NavigationOptions Copy ()
-    {
-        var data = new NavigationOptions ();
-
-        var props = from p in GetType ().GetProperties ()
-                    where p.SetMethod != null
-                    where p.GetCustomAttribute <ExcludeAttribute> () == null
-                    select p;
-
-        foreach (var p in props)
-            p.SetValue (data, p.GetValue (this));
-
-        return data;
-    }
-
-    public void Apply (NavigationOptions data)
-    {
-        var props = from p in GetType ().GetProperties ()
-                    where p.SetMethod != null
-                    where p.GetCustomAttribute <ExcludeAttribute> () == null
-                    select p;
-
-        foreach (var p in props)
-            p.SetValue (this, p.GetValue (data));
-    }
-    
-    public void Save (RH.PersistentSettings settings)
-    {
-        var t_bool   = typeof (bool);
-        var t_int    = typeof (int);
-        var t_double = typeof (double);
-        var t_modkey = typeof (ModifierKey);
-
-        var props = from p in GetType ().GetProperties ()
-                    where p.SetMethod != null
-                    where p.GetCustomAttribute <ExcludeAttribute> () == null
-                    select p;
-
-        foreach (var p in props)
-        {
-            var t = p.PropertyType;
-
-            if (t == t_modkey)
-                settings.SetEnumValue <ModifierKey> (p.Name, (ModifierKey)p.GetValue (this));
-
-            else if (t == t_bool)
-                settings.SetBool (p.Name, (bool)p.GetValue (this));
-            
-            else if (t == t_int)
-                settings.SetInteger (p.Name, (int)p.GetValue (this));
-            
-            else if (t == t_double)
-                settings.SetDouble (p.Name, (double)p.GetValue (this));
-        }
-    }
-
-    public void Load (RH.PersistentSettings settings)
-    {
-
-        var t_bool   = typeof (bool);
-        var t_int    = typeof (int);
-        var t_double = typeof (double);
-        var t_modkey = typeof (ModifierKey);
-
-        var props = from p in GetType ().GetProperties ()
-                    where p.SetMethod != null
-                    where p.GetCustomAttribute <ExcludeAttribute> () == null
-                    select p;
-
-        var keys = settings.Keys;
-        foreach (var p in props)
-        {
-            if (keys.Contains (p.Name) == false) continue;
-
-            var t = p.PropertyType;
-
-            if (t == t_modkey)
-                p.SetValue (this, settings.GetEnumValue <ModifierKey> (p.Name));
-
-            else if (t == t_bool)
-                p.SetValue (this, settings.GetBool (p.Name));
-            
-            else if (t == t_int)
-                p.SetValue (this, settings.GetInteger (p.Name));
-            
-            else if (t == t_double)
-                p.SetValue (this, settings.GetDouble (p.Name));
-        }
-    }
-
-    #endregion
 }
 
 
@@ -270,13 +242,13 @@ class NavigationForm : EF.Form
 
     readonly NavigationOptions _data;
     readonly NavigationOptions _copy;
-    EF.EnumDropDown <ModifierKey> _pmod;
-    EF.EnumDropDown <ModifierKey> _rmod;
-    EF.EnumDropDown <ModifierKey> _zmod;
-    EF.EnumDropDown <ModifierKey> _xmod;
+    readonly EF.EnumDropDown <ModifierKey> _pmod;
+    readonly EF.EnumDropDown <ModifierKey> _rmod;
+    readonly EF.EnumDropDown <ModifierKey> _zmod;
+    readonly EF.EnumDropDown <ModifierKey> _xmod;
 
     bool _valid;
-    EF.Button _bok;
+    readonly EF.Button _bok;
 
     public NavigationForm (NavigationOptions options)
     {
@@ -286,15 +258,14 @@ class NavigationForm : EF.Form
         Padding = new (8, 8);
 
         _valid = true;
-        _copy  = options.Copy ();
+        _copy  = options.Copy <NavigationOptions> ();
         _data  = options;
         _data.PropertyChanged += _OnDataChanged;
 
         DataContext = _data;
         
 
-        var active = new EF.CheckBox ();
-        active.CheckedBinding.BindDataContext (nameof (_data.Active));
+        var active = Ui.CheckBox (_data, nameof (_data.Active));
 
         // Pan
 
@@ -311,8 +282,7 @@ class NavigationForm : EF.Form
         _zmod = new ();
         _zmod.SelectedValueBinding.BindDataContext (nameof (options.ZoomModifier));
 
-        var _zinv = new EF.CheckBox ();
-        _zinv.CheckedBinding.BindDataContext (nameof (options.ReverseZoom));
+        var _zinv = Ui.CheckBox (_data, nameof (_data.ReverseZoom));
         
         var _zforce = new EF.NumericStepper { MinValue = 0.1, MaxValue = 4, Increment = 0.01, DecimalPlaces = 2 };
         _zforce.ValueBinding.BindDataContext (nameof (options.ZoomForce));
@@ -325,14 +295,12 @@ class NavigationForm : EF.Form
         var xsteps = new EF.NumericStepper { MinValue = 2 };
         xsteps.ValueBinding.BindDataContext (nameof (options.PresetSteps));
 
-        var xinplan = new EF.CheckBox ();
-        xinplan.CheckedBinding.BindDataContext (nameof (options.PresetsInPlanView));
+        var xinplan = Ui.CheckBox (_data, nameof (_data.PresetsInPlanView));
 
         var xforce = new EF.NumericStepper { MinValue = 0.1, MaxValue = 4, Increment = 0.01, DecimalPlaces = 2 };
         xforce.ValueBinding.BindDataContext (nameof (options.PresetForce));
 
-        var xcplane = new EF.CheckBox ();
-        xcplane.CheckedBinding.BindDataContext (nameof (options.PresetsAlignCPlane));
+        var xcplane = Ui.CheckBox (_data, nameof (_data.PresetsAlignCPlane));
 
         //
 
@@ -354,24 +322,24 @@ class NavigationForm : EF.Form
                         _Section (
                             _Row ("Active", active, null)
                         ),
-                        _Divider ("Pan"),
+                        Ui.Divider ("Pan"),
                         _Section (
                             _Row ("Modifier", _pmod, null),
                             _Row ()
                         ),
-                        _Divider ("Rotation"),
+                        Ui.Divider ("Rotation"),
                         _Section (
                             _Row ("Modifier", _rmod, null),
                             _Row ()
                         ),
-                        _Divider ("Zoom"),
+                        Ui.Divider ("Zoom"),
                         _Section (
                             _Row ("Modifier", _zmod, null),
                             _Row ("Force", _zforce, null),
                             _Row ("Reverse", _zinv, null),
                             _Row ()
                         ),
-                        _Divider ("Presets"),
+                        Ui.Divider ("Presets"),
                         _Section (
                             _Row ("Modifier", _xmod, null),
                             _Row ("Steps", xsteps, null),
@@ -404,34 +372,24 @@ class NavigationForm : EF.Form
             foreach (var c in controls) stack.Items.Add (c);
             return new EF.Scrollable {
                 Border = EF.BorderType.None,
-                // ExpandContentHeight = true,
-                // ExpandContentWidth = true,
                 Content = stack
             };
         }
 
-        static EF.Expander _CreateAdvancedOptions ()
+        EF.Expander _CreateAdvancedOptions ()
         {
-            var marker = new EF.CheckBox ();
-            marker.CheckedBinding.BindDataContext (nameof (_data.Marker));
+            var marker  = Ui.CheckBox (_data, nameof (_data.Marker));
+            var debug   = Ui.CheckBox (_data, nameof (_data.Debug));
+            var showcam = Ui.CheckBox (_data, nameof (_data.ShowCamera));
 
-            var debug  = new EF.CheckBox ();
-            debug.CheckedBinding.BindDataContext (nameof (_data.Debug));
-            
-            var showcam  = new EF.CheckBox ();
-            showcam.CheckedBinding.BindDataContext (nameof (_data.ShowCamera));
-
-            var expander = new EF.Expander {
-                Header = _Divider ("Advanced"),
-                Expanded = false,
-                Content = _Section (
+            return Ui.Expander (
+                "Advanced",
+                _Section (
                     _Row ("Marker", marker, null),
-                    _Row ("Debug", debug, null),
-                    _Row ("Show camera", showcam, null)
+                    _Row ("Debug", debug, null) //,
+                    // _Row ("Show camera", showcam, null)
                 )
-            };
-
-            return expander;
+            );
         }
 
         static EF.TableLayout _Section (params EF.TableRow[] rows)
@@ -448,17 +406,6 @@ class NavigationForm : EF.Form
             return row;
         }
 
-        static EF.StackLayout _Divider (string label)
-        {
-            return new EF.StackLayout {
-                Orientation = EF.Orientation.Horizontal,
-                Spacing = 8,
-                Items = {
-                    new EF.StackLayoutItem (new EF.Label { Text = label }, EF.VerticalAlignment.Stretch, expand: false),
-                    new EF.StackLayoutItem (new RUI.Controls.Divider (), EF.VerticalAlignment.Stretch, expand: true)
-                }
-            };
-        }
     }
 
     void _OnDataChanged (object sender, PropertyChangedEventArgs e)
@@ -502,9 +449,9 @@ class NavigationForm : EF.Form
         }
     }
 
-    #if RHP // Requires a plugin
+    #if RHP // EtoExtensions.LocalizeAndRestore requires a plugin
 
-    protected override void OnLoadComplete(EventArgs e)
+    protected override void OnLoadComplete (EventArgs e)
     {
         base.OnLoadComplete(e);
 		RUI.EtoExtensions.LocalizeAndRestore (this);

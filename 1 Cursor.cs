@@ -5,14 +5,14 @@
 /*/
 
 
-// The Rhino API has no method to show or hide the cursor and does not allow full control of keyboard events.
 // To make this plugin compatible with MacOS it is necessary to implement the functions surrounded by this macro.
+// ~~The Rhino API has no method to show or hide the cursor~~.
+// *It seems to be possible to use `System.Windows.Forms.Cursor` https://discourse.mcneel.com/t/hide-cursor/93850/17
 #define WIN32
 
 
 using System.Runtime.InteropServices;
 using System.IO;
-
 using SD = System.Drawing;
 
 using ED = Eto.Drawing;
@@ -20,10 +20,9 @@ using EF = Eto.Forms;
 
 using RD = Rhino.Display;
 
+
 #if RHP
-
 namespace Libx.Fix.AutoCameraTarget;
-
 #endif
 
 
@@ -82,7 +81,7 @@ static class Cursor
 }
 
 
-enum VirtualCursorIcon { Hand, Glass, Pivot, None }
+enum VirtualCursorIcon { Hand, Glass, Pivot, Axis, None }
 
 
 /// <summary>
@@ -127,6 +126,7 @@ class VirtualCursor : RD.DisplayConduit
     static readonly RD.DisplayBitmap _tIco = new (_Get ("Hand.png"));
     static readonly RD.DisplayBitmap _zIco = new (_Get ("MagnifyingGlass.png"));
     static readonly RD.DisplayBitmap _rIco = new (_Get ("Rotation.png"));
+    static readonly RD.DisplayBitmap _xIco = new (_Get ("PredefinedOrientations.png"));
 
     #endregion
 
@@ -154,6 +154,7 @@ class VirtualCursor : RD.DisplayConduit
         case VirtualCursorIcon.Glass : e.Display.DrawBitmap (_zIco, pos.X-10, pos.Y-10); break;
         case VirtualCursorIcon.Hand  : e.Display.DrawBitmap (_tIco, pos.X-10, pos.Y-10); break;
         case VirtualCursorIcon.Pivot : e.Display.DrawBitmap (_rIco, pos.X-10, pos.Y-10); break;
+        case VirtualCursorIcon.Axis  : e.Display.DrawBitmap (_xIco, pos.X-10, pos.Y-10); break;
         }
     }
 }

@@ -2,47 +2,25 @@
     Vrecq Jean-marie
     2022/12
     Attribution 4.0 International (CC BY 4.0)
+
+    NOTE:
+    - The file `0 ...` can reference or be referenced by other files
+    - The other files are hierarchical.
+      File `2...` can reference a class in file `1...` but not in `3...`
 /*/
-
-
-// The Rhino API has no method to show or hide the cursor and does not allow full control of keyboard events.
-// To make this plugin compatible with MacOS it is necessary to implement the functions surrounded by this macro.
-#define WIN32
 
 
 using System;
 using System.Runtime.InteropServices;
 using System.ComponentModel;
-
-using SD = System.Drawing;
-
-using ED = Eto.Drawing;
-using EF = Eto.Forms;
+using System.IO;
+using System.Text;
 
 using RH = Rhino;
-using ON = Rhino.Geometry;
 using RP = Rhino.PlugIns;
 using RC = Rhino.Commands;
-using RD = Rhino.Display;
-using RO = Rhino.DocObjects;
 using RI = Rhino.Input.Custom;
-using RR = Rhino.Runtime;
-using RUI = Rhino.UI;
 using RhinoDoc = Rhino.RhinoDoc;
-using RhinoApp = Rhino.RhinoApp;
-using RhinoViewSettings = Rhino.ApplicationSettings.ViewSettings;
-
-
-
-/*/
-
-███    ███  █████  ██ ███    ██ 
-████  ████ ██   ██ ██ ████   ██ 
-██ ████ ██ ███████ ██ ██ ██  ██ 
-██  ██  ██ ██   ██ ██ ██  ██ ██ 
-██      ██ ██   ██ ██ ██   ████ 
- 
-/*/
 
 
 #if RHP
@@ -61,13 +39,12 @@ namespace Libx.Fix.AutoCameraTarget;
 
 public class EntryPoint : RP.PlugIn
 {
-    public override RP.PlugInLoadTime LoadTime => RP.PlugInLoadTime.AtStartup; // for Intersector.AttachEvents ()
+    public override RP.PlugInLoadTime LoadTime => RP.PlugInLoadTime.AtStartup;
 
     protected override RP.LoadReturnCode OnLoad (ref string errorMessage)
     {
-        Cache.AttachEvents ();
-        // Intersector.AttachEvents ();
         Main.Instance.LoadOptions (Settings);
+        Rhino.RhinoApp.Idle += _OnIdle; // When the plugin is loaded, the toolbar is not...
         return base.OnLoad (ref errorMessage);
     }
 
@@ -76,6 +53,32 @@ public class EntryPoint : RP.PlugIn
         Main.Instance.SaveOptions (Settings);
         base.OnShutdown ();
     }
+
+    // https://developer.rhino3d.com/guides/rhinocommon/create-deploy-plugin-toolbar/
+    // Toujours aussi simple.
+    // Et l'exemple n'est même pas complet, "PlugInVersion" n'existe pas.
+
+    void _OnIdle (object o, EventArgs e)
+    {
+        Rhino.RhinoApp.Idle -= _OnIdle;
+        _LoadRUI();
+    }
+
+    void _LoadRUI ()
+    {
+        var path =
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) +
+            $@"\McNeel\Rhinoceros\{Rhino.RhinoApp.ExeVersion}.0\UI\Plug-ins\{Assembly.GetName().Name}.rui";
+
+        if (File.Exists(path+".rui_bak") == false)
+        {
+            try {
+                Rhino.RhinoApp.ToolbarFiles.Open(path).GetGroup(0).Visible = true;
+            }
+            catch { /**/ }
+        }
+    }
+
 }
 
 
@@ -88,7 +91,6 @@ public class AutoCameraTargetCommand : RC.Command
     {
         return Main.Instance.RunToggleCommand (doc);
     }
-
 }
 
 
@@ -120,34 +122,37 @@ class Main
     {
         var go = new RI.GetOption ();
         go.SetCommandPrompt ("Toggle auto camera target");
+        var optactive = go.AddOption ("toggle");
+        var optsettings = go.AddOption ("settings");
+        #if DEBUG
+        var optcache = go.AddOption ("cache");
+        #endif
 
-        var active  = new RI.OptionToggle (false, "No", "Yes") { CurrentValue = Options.Active };
-        var options = new RI.OptionToggle (false, "No", "Yes") { CurrentValue = false };
-
-        for (;;)
+        var ret = go.Get ();
+        if (ret == Rhino.Input.GetResult.Option)
         {
-            go.ClearCommandOptions ();
-            go.AddOptionToggle ("active", ref active);
-            go.AddOptionToggle ("settings", ref options);
-
-            var ret = go.Get ();
-            if (ret == Rhino.Input.GetResult.Option)
+            var optindex = go.OptionIndex ();
+            if (optindex == optactive)
             {
-                if (options.CurrentValue) {
-                    ShowOptions ();
-                    return RC.Result.Success;
-                }
-                else {
-                    Options.Active = active.CurrentValue;
-                    return RC.Result.Success;
-                }
+                Options.Active = !Options.Active;
+                return RC.Result.Success;
             }
-
-            return ret == Rhino.Input.GetResult.Cancel
-                 ? RC.Result.Cancel
-                 : RC.Result.Success;
-
+            else if (optindex == optsettings)
+            {
+                ShowOptions ();
+                return RC.Result.Success;
+            }
+            #if DEBUG
+            if (optindex == optcache) {
+                Cache.ShowDebugForm ();
+                return RC.Result.Success;
+            }
+            #endif
         }
+
+        return ret == Rhino.Input.GetResult.Cancel
+                ? RC.Result.Cancel
+                : RC.Result.Success;
     }
 
     public void ShowOptions () { new NavigationForm (Options).Show (); }
@@ -169,10 +174,9 @@ class Main
             Cursor.ShowCursor ();
 
             if (Options.Active) {
-                Cache.AttachEvents ();
+                Cache.Start ();
             } else {
-                Cache.DetachEvents ();
-                Cache.Clear ();
+                Cache.Stop ();
             }
 
             break;
