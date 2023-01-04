@@ -307,7 +307,7 @@ public class DocumentObserver
     {
         if (RC.Command.InCommand ())
         {
-            var guids =  Rhino.Commands.Command.GetCommandStack();
+            var guids =  RC.Command.GetCommandStack();
             if (guids.Length > 0) {
                 return name == RC.Command.LookupCommandName (guids[0], englishName: true);
             }

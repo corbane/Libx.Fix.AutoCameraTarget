@@ -16,11 +16,14 @@ using System.ComponentModel;
 using System.IO;
 using System.Text;
 
+using EF = Eto.Forms;
+
 using RH = Rhino;
 using RP = Rhino.PlugIns;
 using RC = Rhino.Commands;
 using RI = Rhino.Input.Custom;
 using RhinoDoc = Rhino.RhinoDoc;
+using Rhino.UI;
 
 
 #if RHP
@@ -97,12 +100,12 @@ public class AutoCameraTargetCommand : RC.Command
 #endif // RHP
 
 
-class Main
+public class Main
 {
     static Main? g_instance;
     public static Main Instance => g_instance ??= new ();
 
-    public NavigationOptions Options;
+    public NavigationSettings Settings {  get; private set; }
 
     readonly RMBListener _mouse;
     readonly CameraController _camera;
@@ -110,12 +113,12 @@ class Main
 
     Main ()
     {
-        Options = new NavigationOptions ();
-        _data = new (Options);
-        _camera = new (Options, _data);
+        Settings = new NavigationSettings ();
+        _data = new (Settings);
+        _camera = new (Settings, _data);
         _mouse = new (_camera);
 
-        Options.PropertyChanged += _OnSettingsChanged;
+        Settings.PropertyChanged += _OnSettingsChanged;
     }
 
     public RC.Result RunToggleCommand (RhinoDoc doc)
@@ -134,7 +137,7 @@ class Main
             var optindex = go.OptionIndex ();
             if (optindex == optactive)
             {
-                Options.Active = !Options.Active;
+                Settings.Active = !Settings.Active;
                 return RC.Result.Success;
             }
             else if (optindex == optsettings)
@@ -155,25 +158,34 @@ class Main
                 : RC.Result.Success;
     }
 
-    public void ShowOptions () { new NavigationForm (Options).Show (); }
+    public void ShowOptions ()
+    {
+        var control = new NavigationSettingsLayout (Settings);
+        var form = new FloatingForm { Content = control, Title = "Navigation settings" };
+        control.ButtonOk.Click += delegate { form.Close (); };
+        control.ButtonCancel.Click += delegate { form.Close (); };
+        form.Show ();
+        
+        // new NavigationForm (Options).Show ();
+    }
 
-    public void LoadOptions (RH.PersistentSettings settings) { Options.Load (settings); }
+    public void LoadOptions (RH.PersistentSettings settings) { Settings.Load (settings); }
 
-    public void SaveOptions (RH.PersistentSettings settings) { Options.Save (settings); }
+    public void SaveOptions (RH.PersistentSettings settings) { Settings.Save (settings); }
 
     void _OnSettingsChanged (object sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
-        case nameof (Options.Active):
+        case nameof (Settings.Active):
 
-            _mouse.Enabled = Options.Active;
+            _mouse.Enabled = Settings.Active;
             IntersectionConduit.Hide ();
             CameraConduit.hide ();
             VirtualCursor.Hide ();
             Cursor.ShowCursor ();
 
-            if (Options.Active) {
+            if (Settings.Active) {
                 Cache.Start ();
             } else {
                 Cache.Stop ();

@@ -52,8 +52,7 @@ static class Cursor
     #endif
     
     /// <summary>
-    /// Viewport point when the mouse button is down.
-    /// </summary>
+    ///     Viewport point when the mouse button is down. </summary>
     static ED.Point _initiaCursorPos;
 
     static SD.Rectangle _clientArea;
@@ -145,8 +144,8 @@ class VirtualCursor : RD.DisplayConduit
 
     #endregion
 
-    // DrawForeground ne dessine pas au dessus des objets sélectionnés et du Gumball.
-    protected override void DrawForeground(RD.DrawEventArgs e)
+    // DrawOverlay ne dessine pas au dessus des objets sélectionnés et du Gumball.
+    protected override void DrawOverlay (RD.DrawEventArgs e)
     {
         var pos = Position;
         switch (Icon)

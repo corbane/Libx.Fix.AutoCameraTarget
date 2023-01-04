@@ -12,6 +12,7 @@
 
 using System;
 using System.Collections.Generic;
+
 using RhinoApp = Rhino.RhinoApp;
 
 
@@ -150,3 +151,47 @@ public class IdleRhinoEventGroup
         else _rheventgroupcount--;
     }
 }
+
+
+#if false
+public static class Views
+{
+    static RhinoDoc? _doc;
+    static RD.RhinoViewport? _viewport;
+
+    public static void Start ()
+    {
+        RhinoApp.Idle += _OnIdle;
+    }
+
+    public static void Stop ()
+    {
+        RhinoApp.Idle -= _OnIdle;
+    }
+
+    public static void Redraw (RD.RhinoViewport viewport)
+    {
+        _viewport = viewport;
+    }
+
+    public static void Redraw (RhinoDoc doc)
+    {
+        _doc = doc;
+    }
+
+    static void _OnIdle (object sender, EventArgs e)
+    {
+        if (_doc != null)
+        {
+            _doc.Views.Redraw ();
+            _doc = null;
+            _viewport = null;
+        }
+        else if (_viewport != null) 
+        {
+            _viewport.ParentView.Redraw ();
+            _viewport = null;
+        }
+    }
+}
+#endif

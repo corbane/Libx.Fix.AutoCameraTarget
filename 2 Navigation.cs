@@ -20,6 +20,14 @@ namespace Libx.Fix.AutoCameraTarget;
 #endif
 
 
+public partial interface INavigationSettings : IOptions
+{
+    /// <summary>
+    ///     Delay between modes.. </summary>
+    int DelayBetweenModes { get; }
+}
+
+
 /// <summary>
 ///     Wrapper class above <see cref="NavigationListener"/> </summary>
 class RMBListener : RUI.MouseCallback
@@ -39,17 +47,21 @@ class RMBListener : RUI.MouseCallback
 }
 
 
+/// <summary>
+///     Base class for running functions when the mouse moves. </summary>
 class NavigationListener : RUI.MouseCallback
 {
     const MethodImplOptions INLINE = MethodImplOptions.AggressiveInlining;
 
+    public readonly INavigationSettings Settings;
 
     public RD.RhinoViewport Viewport { get; private set; }
 
 
     #nullable disable // Viewport
-    public NavigationListener ()
+    public NavigationListener (INavigationSettings settings)
     {
+        Settings = settings;
     } 
     #nullable enable
 
@@ -68,12 +80,10 @@ class NavigationListener : RUI.MouseCallback
     ///     Flag to temporarily escape the mouse move event. </summary>
     bool _pause;
 
-    const int PAUSE_DELAY = 70;
-
     [MethodImpl(INLINE)] protected void StartPause ()
     {
         _pause = true;
-        System.Threading.Tasks.Task.Delay (PAUSE_DELAY).ContinueWith ((_) => { _pause = false; });
+        System.Threading.Tasks.Task.Delay (Settings.DelayBetweenModes).ContinueWith ((_) => { _pause = false; });
     }
 
     #endregion
@@ -95,20 +105,20 @@ class NavigationListener : RUI.MouseCallback
 
     #region Modifiers
 
-    readonly Action <ED.Point>?[] _actions = new Action <ED.Point> [Enum.GetNames (typeof(ModifierKey)).Length];
+    readonly Action <ED.Point>?[] _actions = new Action <ED.Point> [Enum.GetNames (typeof(KeyboardModifier)).Length];
 
-    readonly object?[] _tags = new object [Enum.GetNames (typeof(ModifierKey)).Length];
+    readonly object?[] _tags = new object [Enum.GetNames (typeof(KeyboardModifier)).Length];
 
     /// <summary>
     ///     Define a callback function when moving the mouse.</summary>
     /// <param name="modifier">
-    ///     One of the keys from <see cref="ModifierKey"/>
-    ///     or <see cref="ModifierKey.None"/> if no modifier is required for this action.</param>
+    ///     One of the keys from <see cref="KeyboardModifier"/>
+    ///     or <see cref="KeyboardModifier.None"/> if no modifier is required for this action.</param>
     /// <param name="action">
     ///     The action to execute.</param>
     /// <param name="tag">
     ///     Value sent to `OnActionChange` when modifier key and action change.</param>
-    public void SetModifierCallback (ModifierKey modifier, Action <ED.Point>? action, object? tag)
+    public void SetModifierCallback (KeyboardModifier modifier, Action <ED.Point>? action, object? tag)
     {
         _actions[(int)modifier] = action;
         _tags[(int)modifier] = tag;
@@ -116,28 +126,28 @@ class NavigationListener : RUI.MouseCallback
 
     /// <summary>
     ///     Returns the action associated with a modifier key. </summary>
-    [MethodImpl(INLINE)] Action <ED.Point>? _GetAction (ModifierKey modifier)
+    [MethodImpl(INLINE)] Action <ED.Point>? _GetAction (KeyboardModifier modifier)
     {
-        return _actions[(int)modifier] ?? _actions[(int)ModifierKey.None];
+        return _actions[(int)modifier] ?? _actions[(int)KeyboardModifier.None];
     }
 
     /// <summary>
     ///     Returns the tag associated with an action. </summary>
-    [MethodImpl(INLINE)] object? _GetActionTag (ModifierKey modifier)
+    [MethodImpl(INLINE)] object? _GetActionTag (KeyboardModifier modifier)
     {
-        return _tags[(int)modifier] ?? _tags[(int)ModifierKey.None];
+        return _tags[(int)modifier] ?? _tags[(int)KeyboardModifier.None];
     }
 
-    ModifierKey _cmodifier;
+    KeyboardModifier _cmodifier;
 
-    public ModifierKey ActiveModifier => _actions[(int)_cmodifier] != null ? _cmodifier : ModifierKey.None;
+    public KeyboardModifier ActiveModifier => _actions[(int)_cmodifier] != null ? _cmodifier : KeyboardModifier.None;
 
-    [MethodImpl(INLINE)] void _SetActiveModifier (ModifierKey modifier)
+    [MethodImpl(INLINE)] void _SetActiveModifier (KeyboardModifier modifier)
     {
         _cmodifier = modifier;
     }
 
-    [MethodImpl(INLINE)] ModifierKey _GetActiveModifier ()
+    [MethodImpl(INLINE)] KeyboardModifier _GetActiveModifier ()
     {
         return _cmodifier;
     }

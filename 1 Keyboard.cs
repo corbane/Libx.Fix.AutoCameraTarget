@@ -21,8 +21,18 @@ namespace Libx.Fix.AutoCameraTarget;
 #endif
 
 
-
-public enum ModifierKey { Ctrl, Shift, Alt, Capital, None }
+/// <summary>
+///     Keyboard key for navigation. </summary>
+/// <remarks>
+///     This enumeration includes the uppercase key, in the future this key will be used to block a transformation axis. </remarks>
+public enum KeyboardModifier
+{
+    Ctrl,
+    Shift,
+    Alt,
+    Capital,
+    None
+}
 
 
 public static class Keyboard
@@ -74,14 +84,14 @@ public static class Keyboard
         _capslock = CapsLockIsActive ();
     }
 
-    public static ModifierKey GetCurrentModifier ()
+    public static KeyboardModifier GetCurrentModifier ()
     {
         return EF.Keyboard.Modifiers switch
         {
-            EF.Keys.Control => ModifierKey.Ctrl,
-            EF.Keys.Shift   => ModifierKey.Shift,
-            EF.Keys.Alt     => ModifierKey.Alt,
-            _ => Keyboard.CapsLockIsDown () ? ModifierKey.Capital : ModifierKey.None
+            EF.Keys.Control => KeyboardModifier.Ctrl,
+            EF.Keys.Shift   => KeyboardModifier.Shift,
+            EF.Keys.Alt     => KeyboardModifier.Alt,
+            _ => Keyboard.CapsLockIsDown () ? KeyboardModifier.Capital : KeyboardModifier.None
         };
     }
 

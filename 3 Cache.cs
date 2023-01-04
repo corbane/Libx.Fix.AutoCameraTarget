@@ -56,15 +56,20 @@ namespace Libx.Fix.AutoCameraTarget;
 
 #if DEBUG
 
-public class CacheOptions : BaseOptions
+public class CacheOptions : Settings
 {
     public bool VisualDebugEnabled => _displaymeshes || _displaybbox;
 
     bool _displaymeshes;
-    public bool DebugDisplayMeshes { get => _displaymeshes; set { _Set (ref _displaymeshes, value); } }
+    public bool DebugDisplayMeshes { get => _displaymeshes; set { Set (ref _displaymeshes, value); } }
 
     bool _displaybbox;
-    public bool DebugDisplayBBox { get => _displaybbox; set { _Set (ref _displaybbox, value); } }
+    public bool DebugDisplayBBox { get => _displaybbox; set { Set (ref _displaybbox, value); } }
+
+    public override bool Validate()
+    {
+        return true;
+    }
 }
 
 #endif
@@ -138,8 +143,6 @@ public static class Cache
 
     static readonly Dictionary<Guid, CacheItem> _cache = new ();
 
-    static readonly ON.Mesh[] EMPTY_MESH_ARRAY = Array.Empty <ON.Mesh> ();
-    
     public struct CacheItem
     {
         #if DEBUG
@@ -275,21 +278,19 @@ public static class Cache
         item.Meshes = meshes;
         _cache[objectId] = item;
     }
-    static void _GenerateIntersectionMeshes (RO.RhinoObject obj)
-    {
-        // obj.mesh
-    }
+    
+    // TODO: Ability to set a custom CacheItem.
+    // static void Append (ON.Mesh intersectionMesh);
+
+    // TODO: Custom intersection mesh generation 
+    // static void _GenerateIntersectionMeshes (RO.RhinoObject obj) { }
 
     #endregion
 
 
     #region Idle Processor
 
-    #if DEBUG
     static IdleQueue <ProcessArg> _idlemesher = new (_Process);
-    #else
-    static IdleQueue <ProcessArg> _idlemesher = new (_Process);
-    #endif
 
     readonly struct ProcessArg
     {
@@ -327,8 +328,9 @@ public static class Cache
     #endregion
 
 
-    #region Debug Form
     #if DEBUG
+
+    #region Debug Form
 
     public static void ShowDebugForm ()
     {
@@ -338,12 +340,16 @@ public static class Cache
         }.Show ();
     }
 
-    #endif
     #endregion
 
 
     #region Debug Events
-    #if DEBUG
+
+    /*/
+        Specific for working with RhinoDoc events.
+        These functions only works because when loading a file or modifying/creating/deleting objects,
+        Rhino leaves no downtime.
+    /*/
 
     public delegate void OnCacheChangedHandler ();
 
@@ -357,12 +363,14 @@ public static class Cache
 
     static void _ClearDebugChanges () { _debugeventgroup.Reset (); }
 
-    #endif
     #endregion
 
 
     #region Debug States
-    #if DEBUG
+
+    /*/
+        These functions count the number of objects by types
+    /*/
 
     public static readonly Dictionary <RO.ObjectType, uint> States = new ();
 
@@ -382,8 +390,9 @@ public static class Cache
         States[t]--;
     }
 
-    #endif
     #endregion
+
+    #endif
 }
 
 
@@ -491,23 +500,24 @@ class CacheConduit : RD.DisplayConduit
     CacheConduit () { /**/ }
     #nullable enable
 
-    protected override void PostDrawObjects (RD.DrawEventArgs e)
+    // https://discourse.mcneel.com/t/opengl-in-displayconduit/82076/44
+    protected override void DrawOverlay (RD.DrawEventArgs e)
     {
         if (_options.DebugDisplayMeshes == _options.DebugDisplayBBox)
         {
             foreach (var (meshes, bbox) in Cache.Items)
             {
-                e.Display.DrawBox (bbox, SD.Color.AntiqueWhite, 2);
+                e.Display.DrawBox (bbox, SD.Color.AntiqueWhite, 1);
                 if (meshes != null) {
                     foreach (var m in meshes)
-                        e.Display.DrawMeshWires (m, SD.Color.AntiqueWhite, 2);
+                        e.Display.DrawMeshWires (m, SD.Color.AntiqueWhite, 1);
                 }
             }
         }
         else if (_options.DebugDisplayBBox)
         {
             foreach (var (_, bbox) in Cache.Items)
-                e.Display.DrawBox (bbox, SD.Color.AntiqueWhite, 2);
+                e.Display.DrawBox (bbox, SD.Color.AntiqueWhite, 1);
         }
         else
         {
@@ -515,7 +525,7 @@ class CacheConduit : RD.DisplayConduit
             {
                 if (meshes != null) {
                     foreach (var m in meshes)
-                        e.Display.DrawMeshWires (m, SD.Color.AntiqueWhite, 2);
+                        e.Display.DrawMeshWires (m, SD.Color.AntiqueWhite, 1);
                 }
             }
         }

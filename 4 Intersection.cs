@@ -20,7 +20,7 @@ namespace Libx.Fix.AutoCameraTarget;
 #endif
 
 
-interface IIntersectionOptions : IOptions
+public partial interface INavigationSettings : IOptions
 {
     public bool Marker { get; }
     public bool Debug { get; }
@@ -64,9 +64,9 @@ class IntersectionData
 
     public SD.Point ViewportPoint;
 
-    public IIntersectionOptions Options { get; }
+    public INavigationSettings Options { get; }
 
-    public IntersectionData (IIntersectionOptions options)
+    public IntersectionData (INavigationSettings options)
     {
         Options = options;
     }
@@ -409,7 +409,7 @@ class IntersectionConduit : RD.DisplayConduit
         e.BoundingBox.Union (_data.InfoBBox);
     }
 
-    protected override void DrawForeground (RD.DrawEventArgs e)
+    protected override void DrawOverlay (RD.DrawEventArgs e)
     {
         if (e.Viewport.Id != _data.Viewport.Id) return;
 
