@@ -226,7 +226,7 @@ public abstract class Settings : ISettings
 }
 
 
-public class SettingsLayout <Opt> : EF.StackLayout where Opt : ISettings, new ()
+public class SettingsLayout <S> : EF.StackLayout where S : ISettings, new ()
 {
     public const int SCRW = 14;
     public const int PAD = 8;
@@ -235,8 +235,8 @@ public class SettingsLayout <Opt> : EF.StackLayout where Opt : ISettings, new ()
 
 
     readonly Type _datatype;
-    public readonly Opt Data;
-    public Opt Copy { get; private set; }
+    public readonly S Data;
+    public S Copy { get; private set; }
 
     readonly EF.Scrollable _wrap;
     readonly EF.StackLayout _body;
@@ -245,17 +245,17 @@ public class SettingsLayout <Opt> : EF.StackLayout where Opt : ISettings, new ()
     readonly EF.Button _bno;
 
 
-    public SettingsLayout (Opt options)
+    public SettingsLayout (S settings)
     {
         Orientation                = EF.Orientation.Vertical;
         HorizontalContentAlignment = EF.HorizontalAlignment.Stretch;
         VerticalContentAlignment   = EF.VerticalAlignment.Stretch;
         MinimumSize                = new (CTRLW + PAD*3 + SCRW, LINEH);
 
-        Data        = options;
-        Copy        = Data.Copy <Opt> ();
-        DataContext = options;
-        _datatype   = options.GetType ();
+        Data        = settings;
+        Copy        = Data.Copy <S> ();
+        DataContext = settings;
+        _datatype   = settings.GetType ();
         
         _bno = new EF.Button { Text = "Cancel" };
         _bno.Click += delegate { RestoreOptions (); /*Close ();*/ };
@@ -289,6 +289,8 @@ public class SettingsLayout <Opt> : EF.StackLayout where Opt : ISettings, new ()
 
         Items.Add (new EF.StackLayoutItem (_wrap, expand: true));
         Items.Add (new EF.StackLayoutItem (_foot, expand: false));
+
+        settings.PropertyChanged += _OnDataChanged;
     }
 
 
@@ -339,17 +341,22 @@ public class SettingsLayout <Opt> : EF.StackLayout where Opt : ISettings, new ()
     #endregion
 
 
-    #region Options
+    #region Settings
 
-    public virtual void RestoreOptions ()
+    protected virtual void RestoreOptions ()
     {
         Data.Apply (Copy);
     }
 
-    public virtual void ApplyOptions ()
+    protected virtual void ApplyOptions ()
     {
         if (Data.Validate () == false) Data.Apply (Copy);
-        else Copy = Data.Copy <Opt> ();
+        else Copy = Data.Copy <S> ();
+    }
+    
+    void _OnDataChanged(object sender, PropertyChangedEventArgs e)
+    {
+        _bok.Enabled = Data.Validate ();
     }
 
     #endregion

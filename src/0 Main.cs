@@ -124,15 +124,17 @@ public class Main
         Settings.PropertyChanged += _OnSettingsChanged;
     }
 
-    public RC.Result RunToggleCommand(RhinoDoc doc)
+    public RC.Result RunToggleCommand (RhinoDoc doc)
     {
         var go = new RI.GetOption();
         go.SetCommandPrompt("Toggle auto camera target");
         var optactive = go.AddOption("toggle");
         var optsettings = go.AddOption("settings");
-#if DEBUG
+        #if DEBUG
         var optcache = go.AddOption("cache");
-#endif
+        #endif
+
+        var active = Settings.Active || Settings.ActiveInPlanView;
 
         var ret = go.Get();
         if (ret == RH.Input.GetResult.Option)
@@ -140,7 +142,8 @@ public class Main
             var optindex = go.OptionIndex();
             if (optindex == optactive)
             {
-                Settings.Active = !Settings.Active;
+                Settings.Active = !active;
+                Settings.ActiveInPlanView = !active;
                 return RC.Result.Success;
             }
             else if (optindex == optsettings)
@@ -148,13 +151,13 @@ public class Main
                 ShowOptions();
                 return RC.Result.Success;
             }
-#if DEBUG
+            #if DEBUG
             if (optindex == optcache)
             {
                 Cache.ShowDebugForm();
                 return RC.Result.Success;
             }
-#endif
+            #endif
         }
 
         return ret == RH.Input.GetResult.Cancel
@@ -162,7 +165,7 @@ public class Main
                 : RC.Result.Success;
     }
 
-    public void ShowOptions()
+    public void ShowOptions ()
     {
         var control = new NavigationSettingsLayout(Settings);
         var form = new FloatingForm { Content = control, Title = "Navigation settings" };
@@ -173,31 +176,32 @@ public class Main
         // new NavigationForm (Options).Show ();
     }
 
-    public void LoadOptions(RH.PersistentSettings settings) { Settings.Load(settings); }
+    public void LoadOptions (RH.PersistentSettings settings) { Settings.Load(settings); }
 
-    public void SaveOptions(RH.PersistentSettings settings) { Settings.Save(settings); }
+    public void SaveOptions (RH.PersistentSettings settings) { Settings.Save(settings); }
 
-    void _OnSettingsChanged(object sender, PropertyChangedEventArgs e)
+    void _OnSettingsChanged (object sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
-            case nameof(Settings.Active):
+            case nameof (Settings.Active):
+            case nameof (Settings.ActiveInPlanView):
 
-                _mouse.Enabled = Settings.Active;
                 IntersectionConduit.Hide();
                 CameraConduit.hide();
                 VirtualCursor.Hide();
                 Cursor.ShowCursor();
 
-                if (Settings.Active)
+                if (Settings.Active || Settings.ActiveInPlanView)
                 {
+                    _mouse.Enabled = true;
                     Cache.Start();
                 }
                 else
                 {
+                    _mouse.Enabled = false;
                     Cache.Stop();
                 }
-
                 break;
         }
     }
@@ -235,11 +239,9 @@ public class NavigationSettings : Settings, IControllerSettings
     [Option(Tooltip = "Display visual information for debugging or understanding the intersection process.")]
     public bool Debug { get => _debug; set { Set(ref _debug, value); } }
 
-#if DEBUG
     [Exclude]
     public bool ShowCamera { get => _showcam; set { Set(ref _showcam, value); } }
     bool _showcam;
-#endif
 
     #endregion
 
@@ -358,8 +360,9 @@ public class NavigationSettings : Settings, IControllerSettings
 
     public override bool Validate()
     {
-        return _Validate(g_modnames)
-            && _Validate(g_modnamesP);
+        var r = _Validate(g_modnames);
+        r &= _Validate(g_modnamesP);
+        return r;
 
         bool _Validate(string[] names)
         {
@@ -437,9 +440,9 @@ public class NavigationSettingsLayout : SettingsLayout<NavigationSettings>
         var delay = GetControl(nameof(options.DelayBetweenModes));
         var marker = GetControl(nameof(options.Marker));
         var debug = GetControl(nameof(options.Debug));
-#if DEBUG
+        #if DEBUG
         var showcam = GetControl(nameof(options.ShowCamera));
-#endif
+        #endif
 
         _pmod = GetControl(nameof(options.PanModifier));
         _pmodP = GetControl(nameof(options.PanModifierInPlanView));
@@ -495,9 +498,9 @@ public class NavigationSettingsLayout : SettingsLayout<NavigationSettings>
             "Advanced",
             Row("Marker", marker),
             Row("Debug", debug)
-#if DEBUG
+            #if DEBUG
             , Row("Show camera", showcam)
-#endif
+            #endif
         );
 
     }

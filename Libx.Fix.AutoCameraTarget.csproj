@@ -4,7 +4,7 @@
     
     <PropertyGroup>
         <AssemblyTitle>AutoCameraTarget</AssemblyTitle>
-        <Version>2.0.2</Version>
+        <Version>2.1.0</Version>
         <Description>this plugin interpret the `Ctrl+Shift+RMB` keys as the default navigation behavior.</Description>
     </PropertyGroup>
     
