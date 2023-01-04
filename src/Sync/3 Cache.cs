@@ -50,7 +50,12 @@ using RhinoDoc = Rhino.RhinoDoc;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+
+using Libx.Fix.AutoCameraTarget.Ui;
+using Libx.Fix.AutoCameraTarget.Config;
+
+namespace Libx.Fix.AutoCameraTarget.Sync;
+
 #endif
 
 
@@ -424,7 +429,7 @@ class CacheDebugControl : EF.StackLayout
         var chkbbox = new EF.CheckBox { Text = "Show bounding box" };
         chkbbox.CheckedBinding.BindDataContext (nameof (options.DebugDisplayBBox));
 
-        var expander = Ui.Expander ("Options", chkmeshes, chkbbox);
+        var expander = EtoHelpers.Expander ("Options", chkmeshes, chkbbox);
         Items.Add (new EF.StackLayoutItem (expander, expand: false));
 
         Cache.OnCacheChanged += _OnCacheChaged;

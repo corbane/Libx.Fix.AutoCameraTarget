@@ -20,7 +20,7 @@ using RhinoDoc = Rhino.RhinoDoc;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+namespace Libx.Fix.AutoCameraTarget.Sync;
 #endif
 
 

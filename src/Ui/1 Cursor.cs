@@ -22,13 +22,13 @@ using RD = Rhino.Display;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+namespace Libx.Fix.AutoCameraTarget.Ui;
 #endif
 
 
 /// <summary>
 ///     Utility class to manage the system cursor. </summary>
-static class Cursor
+public static class Cursor
 {
     #if WIN32
 
@@ -80,12 +80,12 @@ static class Cursor
 }
 
 
-enum VirtualCursorIcon { Hand, Glass, Pivot, Axis, None }
+public enum VirtualCursorIcon { Hand, Glass, Pivot, Axis, None }
 
 
 /// <summary>
 ///     Class to draw a replacement cursor in the viewport. </summary>
-class VirtualCursor : RD.DisplayConduit
+public class VirtualCursor : RD.DisplayConduit
 {
     static VirtualCursor? g_instance;
 

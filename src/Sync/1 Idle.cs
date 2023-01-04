@@ -17,7 +17,7 @@ using RhinoApp = Rhino.RhinoApp;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+namespace Libx.Fix.AutoCameraTarget.Sync;
 #endif
 
 

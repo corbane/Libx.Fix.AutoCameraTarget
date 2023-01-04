@@ -21,7 +21,6 @@
         <TargetFramework>net48</TargetFramework>
         <LangVersion>11</LangVersion>
         <Nullable>enable</Nullable>
-        <DefineConstants>RHP</DefineConstants>
     </PropertyGroup>
 
     <!-- Ressources -->
@@ -41,6 +40,7 @@
     
     <ItemGroup>
         <Reference Private="False" Include="Eto" HintPath="C:\Program Files\Rhino 7\System\Eto.dll" />
+        <Reference Private="False" Include="Grasshopper" HintPath="C:\Program Files\Rhino 7\Plug-ins\Grasshopper\Grasshopper.dll" />
         <Reference Private="False" Include="RhinoCommon" HintPath="C:\Program Files\Rhino 7\System\RhinoCommon.dll" />
         <Reference Private="False" Include="Rhino.UI" HintPath="C:\Program Files\Rhino 7\System\Rhino.UI.dll" />
     </ItemGroup>
@@ -51,6 +51,7 @@
         <OutputType>Library</OutputType>
         <TargetExt>.rhp</TargetExt>
         <GenerateDocumentationFile>True</GenerateDocumentationFile>
+        <DefineConstants>RHP;GHA</DefineConstants>
     </PropertyGroup>
 
     <PropertyGroup Condition="$(Configuration) == 'Debug'">

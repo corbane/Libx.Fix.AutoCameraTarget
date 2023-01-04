@@ -16,18 +16,23 @@ using RhinoApp = Rhino.RhinoApp;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+
+using Libx.Fix.AutoCameraTarget.Sync;
+using Libx.Fix.AutoCameraTarget.Config;
+
+namespace Libx.Fix.AutoCameraTarget.Intersection;
+
 #endif
 
 
-public partial interface INavigationSettings : IOptions
+public partial interface IIntersectionSettings : ISettings
 {
     public bool Marker { get; }
     public bool Debug { get; }
 }
 
 
-enum IntersectionStatus
+public enum IntersectionStatus
 {
     /// <summary>
     /// There is nothing visible in the viewport.
@@ -56,7 +61,7 @@ enum IntersectionStatus
 }
 
 
-class IntersectionData
+public class IntersectionData
 {
     #nullable disable
     public RD.RhinoViewport Viewport;
@@ -64,9 +69,9 @@ class IntersectionData
 
     public SD.Point ViewportPoint;
 
-    public INavigationSettings Options { get; }
+    public IIntersectionSettings Options { get; }
 
-    public IntersectionData (INavigationSettings options)
+    public IntersectionData (IIntersectionSettings options)
     {
         Options = options;
     }
@@ -118,7 +123,7 @@ class IntersectionData
 }
 
 
-static class Intersector
+public static class Intersector
 {
     // TODO:
     // http://what-when-how.com/advanced-methods-in-computer-graphics/collision-detection-advanced-methods-in-computer-graphics-part-6/

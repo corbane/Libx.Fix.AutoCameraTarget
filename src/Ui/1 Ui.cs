@@ -15,11 +15,11 @@ using RUI = Rhino.UI;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+namespace Libx.Fix.AutoCameraTarget.Ui;
 #endif
 
 
-class FloatingForm : EF.Form
+public class FloatingForm : EF.Form
 {
     public FloatingForm ()
     {
@@ -63,9 +63,8 @@ class FloatingForm : EF.Form
 
 /// <summary>
 ///     Utility methods that are unreliable and specific to this project. </summary>
-static class Ui
+static class EtoHelpers
 {
-
     public static EF.StackLayout Divider (string label)
     {
         return new EF.StackLayout {
@@ -87,7 +86,7 @@ static class Ui
         foreach (var c in items) stack.Items.Add (c);
         return new EF.Expander 
         {
-            Header = Ui.Divider (label),
+            Header = EtoHelpers.Divider (label),
             Expanded = false,
             Content = stack
         };

@@ -16,11 +16,16 @@ using RUI = Rhino.UI;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+
+using Libx.Fix.AutoCameraTarget.Ui;
+using Libx.Fix.AutoCameraTarget.Config;
+
+namespace Libx.Fix.AutoCameraTarget.Views;
+
 #endif
 
 
-public partial interface INavigationSettings : IOptions
+public interface INavigationSettings : ISettings
 {
     /// <summary>
     ///     Delay between modes.. </summary>
@@ -49,7 +54,7 @@ class RMBListener : RUI.MouseCallback
 
 /// <summary>
 ///     Base class for running functions when the mouse moves. </summary>
-class NavigationListener : RUI.MouseCallback
+public class NavigationListener : RUI.MouseCallback
 {
     const MethodImplOptions INLINE = MethodImplOptions.AggressiveInlining;
 

@@ -20,11 +20,15 @@ using RhinoApp = Rhino.RhinoApp;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+
+using Libx.Fix.AutoCameraTarget.Config;
+
+namespace Libx.Fix.AutoCameraTarget.Views;
+
 #endif
 
 
-public partial interface INavigationSettings : IOptions
+public interface ICameraSettings : ISettings
 {
     bool ShowCamera {  get; }
 }
@@ -44,7 +48,7 @@ public partial interface INavigationSettings : IOptions
 ///     * Translation (Pan[X|Y|Z])
 /// </code>
 /// </summary>
-class Camera
+public class Camera
 {
     #nullable disable
     RD.RhinoViewport _vp;
@@ -275,7 +279,7 @@ class Camera
 
 /// <summary>
 ///     For visual debugging (show camera with Grasshopper or native objects, change camera). </summary>
-class CameraConduit : RD.DisplayConduit
+public class CameraConduit : RD.DisplayConduit
 {
     static CameraConduit? g_instance;
 

@@ -17,7 +17,7 @@ using EF = Eto.Forms;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+namespace Libx.Fix.AutoCameraTarget.Ui;
 #endif
 
 

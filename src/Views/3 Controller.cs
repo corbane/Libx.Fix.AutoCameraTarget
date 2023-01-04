@@ -20,11 +20,18 @@ using RhinoApp = Rhino.RhinoApp;
 
 
 #if RHP
-namespace Libx.Fix.AutoCameraTarget;
+
+using Libx.Fix.AutoCameraTarget.Ui;
+using Libx.Fix.AutoCameraTarget.Config;
+using Libx.Fix.AutoCameraTarget.Intersection;
+
+namespace Libx.Fix.AutoCameraTarget.Views;
+
 #endif
 
 
 public enum NavigationMode { Pan, Rotate, Zoom, Presets, Unknown }
+
 
 public enum NavigationModifier
 {
@@ -35,6 +42,7 @@ public enum NavigationModifier
     None,
     Disabled
 }
+
 
 public static class ModifierExtensions
 {
@@ -69,7 +77,7 @@ public static class ModifierExtensions
 }
 
 
-public partial interface INavigationSettings : IOptions
+public interface IControllerSettings : ISettings, IIntersectionSettings, ICameraSettings, INavigationSettings
 {
     bool Active { get; }
     bool ActiveInPlanView { get; }
@@ -94,7 +102,8 @@ public partial interface INavigationSettings : IOptions
     bool PresetsAlignCPlane { get; }
 }
 
-class CameraController : NavigationListener 
+
+public class Controller : NavigationListener 
 {
     RhinoDoc _doc;
 
@@ -102,11 +111,14 @@ class CameraController : NavigationListener
 
     readonly Camera _cam;
 
+    
+    public new readonly IControllerSettings Settings;
 
 
     # nullable disable // _doc
-    public CameraController (NavigationSettings options, IntersectionData data) : base (options)
+    public Controller (IControllerSettings options, IntersectionData data) : base (options)
     {
+        Settings = options;
         Data = data;
         _cam = new ();
     }
