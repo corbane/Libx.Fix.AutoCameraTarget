@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.ComponentModel;
 using System.IO;
 using System.Text;
+using SD = System.Drawing;
 
 using EF = Eto.Forms;
 using ED = Eto.Drawing;
@@ -19,7 +20,6 @@ using RP = Rhino.PlugIns;
 using RC = Rhino.Commands;
 using RI = Rhino.Input.Custom;
 using RhinoDoc = Rhino.RhinoDoc;
-using Rhino.UI;
 
 
 #if RHP
@@ -42,26 +42,39 @@ using Libx.Fix.AutoCameraTarget.Views;
 namespace Libx.Fix.AutoCameraTarget;
 
 
+#endif // RHP
+
 public class RhinoPlugIn : RP.PlugIn
 {
+    #nullable disable
+    public static RhinoPlugIn Instance { get; private set; }
+    #nullable enable
+
+    public RhinoPlugIn () 
+    {
+        Instance = this;
+    }
+
+
     public override RP.PlugInLoadTime LoadTime => RP.PlugInLoadTime.AtStartup;
 
     protected override RP.LoadReturnCode OnLoad(ref string errorMessage)
     {
         Main.Instance.LoadOptions(Settings);
-        RH.RhinoApp.Idle += _OnIdle; // When the plugin is loaded, the toolbar is not...
+        RH.RhinoApp.Idle += _OnIdle; // When the plugin is loaded, the toolbar is not.
+        
         return base.OnLoad(ref errorMessage);
     }
 
     protected override void OnShutdown()
     {
+        // RH.RhinoApp.Closing is called after OnShutdown
+        // RH.RhinoApp.WriteLine ("Rhino Shutdown");
         Main.Instance.SaveOptions(Settings);
         base.OnShutdown();
     }
 
     // https://developer.rhino3d.com/guides/rhinocommon/create-deploy-plugin-toolbar/
-    // Toujours aussi simple.
-    // Et l'exemple n'est même pas complet, "PlugInVersion" n'existe pas.
 
     void _OnIdle(object o, EventArgs e)
     {
@@ -100,28 +113,28 @@ public class AutoCameraTargetCommand : RC.Command
 }
 
 
-#endif // RHP
-
-
 public class Main
 {
     static Main? g_instance;
     public static Main Instance => g_instance ??= new();
 
-    public NavigationSettings Settings { get; private set; }
+    public NavigationSettings Settings { get; }
+    public ViewportMenuSettings ViewportMenuSettings { get; }
 
-    readonly RMBListener _mouse;
-    readonly Controller _camera;
-    readonly IntersectionData _data;
+    readonly Navigator _navigator;
+
+    readonly NavigationMenu _vpmenu;
 
     Main()
     {
-        Settings = new NavigationSettings();
-        _data = new(Settings);
-        _camera = new(Settings, _data);
-        _mouse = new(_camera);
+        Settings = new ();
+        var data = new IntersectionData (Settings);
+        _navigator = new (Settings, new Controller (Settings, data));
 
         Settings.PropertyChanged += _OnSettingsChanged;
+
+        ViewportMenuSettings = new ();
+        _vpmenu = new (ViewportMenuSettings);
     }
 
     public RC.Result RunToggleCommand (RhinoDoc doc)
@@ -148,7 +161,7 @@ public class Main
             }
             else if (optindex == optsettings)
             {
-                ShowOptions();
+                ShowNavigationSettings();
                 return RC.Result.Success;
             }
             #if DEBUG
@@ -165,20 +178,52 @@ public class Main
                 : RC.Result.Success;
     }
 
-    public void ShowOptions ()
+    public void ShowNavigationSettings ()
     {
-        var control = new NavigationSettingsLayout(Settings);
-        var form = new FloatingForm { Content = control, Title = "Navigation settings" };
-        control.ButtonOk.Click += delegate { form.Close(); };
-        control.ButtonCancel.Click += delegate { form.Close(); };
+        var form = new NavigationSettingsForm (Settings);
         form.Show();
-
-        // new NavigationForm (Options).Show ();
     }
 
-    public void LoadOptions (RH.PersistentSettings settings) { Settings.Load(settings); }
+    public void LoadOptions (RH.PersistentSettings settings)
+    {
+        RH.PersistentSettings chunk;
 
-    public void SaveOptions (RH.PersistentSettings settings) { Settings.Save(settings); }
+        if((settings.TryGetChild (Settings.GetType ().FullName, out chunk)))
+            Settings.Load (chunk);
+            
+        if((settings.TryGetChild (_vpmenu.Settings.GetType ().FullName, out chunk)))
+            _vpmenu.Settings.Load (chunk);
+    }
+
+    public void SaveOptions (RH.PersistentSettings settings)
+    {
+        RH.PersistentSettings chunk;
+
+        chunk = settings.AddChild (Settings.GetType ().FullName);
+        Settings.Save (chunk);
+
+        chunk = settings.AddChild (_vpmenu.Settings.GetType ().FullName);
+        _vpmenu.Settings.Save (chunk);
+    }
+
+    public static void RestoreWindow (EF.Window win)
+    {
+        if (RhinoPlugIn.Instance.Settings.TryGetChild (win.GetType ().FullName, out var chunk) == false)
+            return;
+
+        if (chunk.TryGetPoint (nameof (win.Location), out var location))
+            win.Location = new (location.X, location.Y);
+
+        if (chunk.TryGetSize  (nameof (win.Size), out var size)) 
+            win.Size = new (size.Width, size.Height);
+    }
+
+    public static void SaveWindow (EF.Window win)
+    {
+        var chunk = RhinoPlugIn.Instance.Settings.AddChild (win.GetType ().FullName);
+        chunk.SetPoint (nameof (win.Location), new SD.Point (win.Location.X, win.Location.Y));
+        chunk.SetSize  (nameof (win.Size), new SD.Size (win.Size.Width, win.Size.Height));
+    }
 
     void _OnSettingsChanged (object sender, PropertyChangedEventArgs e)
     {
@@ -187,19 +232,22 @@ public class Main
             case nameof (Settings.Active):
             case nameof (Settings.ActiveInPlanView):
 
-                IntersectionConduit.Hide();
-                CameraConduit.hide();
+                // IntersectionConduit.Hide();
+                Intersector.HideDebugConduit ();
+                LiveCamera.HideDebugConduit();
                 VirtualCursor.Hide();
                 Cursor.ShowCursor();
 
                 if (Settings.Active || Settings.ActiveInPlanView)
                 {
-                    _mouse.Enabled = true;
+                    _vpmenu.Start ();
+                    _navigator.Enabled = true;
                     Cache.Start();
                 }
                 else
                 {
-                    _mouse.Enabled = false;
+                    _vpmenu.Stop ();
+                    _navigator.Enabled = false;
                     Cache.Stop();
                 }
                 break;
@@ -208,15 +256,17 @@ public class Main
 }
 
 
-public class NavigationSettings : Settings, IControllerSettings
+public class NavigationSettings : Settings, IControllerSettings, IIntersectionSettings, ICameraSettings, INavigationSettings
 {
+    // public override Guid SettingsGuidKey => new Guid("{E255B528-60E3-4FD4-BE4E-00DD640F8FDE}");
+
     const string TT_MOD = "Modifier key. \n'None' for no modifier key, 'Disable' to disable this feature.";
     const string TT_MOD_PV = "Modifier key in plan views. \n'None' for no modifier key, 'Disable' to disable this feature.";
 
     bool _active = false;
     bool _activeP = false;
     int _delay = 150;
-    bool _marker = false;
+    bool _marker = true;
 
     [Option(Tooltip = "Enable plug-in in non plan views.")]
     public bool Active { get => _active; set { Set(ref _active, value); } }
@@ -234,7 +284,7 @@ public class NavigationSettings : Settings, IControllerSettings
 
     #region Visual Debug
 
-    bool _debug;
+    bool _debug = true;
 
     [Option(Tooltip = "Display visual information for debugging or understanding the intersection process.")]
     public bool Debug { get => _debug; set { Set(ref _debug, value); } }
@@ -360,7 +410,30 @@ public class NavigationSettings : Settings, IControllerSettings
 
     public override bool Validate()
     {
-        var r = _Validate(g_modnames);
+        bool r = true;
+        bool v;
+        var t = GetType ();
+        
+        v = Active;
+        OptionAttribute.Get (t, nameof (PanModifier)).Enabled = v;
+        OptionAttribute.Get (t, nameof (RotateModifier)).Enabled = v;
+        OptionAttribute.Get (t, nameof (ZoomModifier)).Enabled = v;
+        OptionAttribute.Get (t, nameof (PresetsModifier)).Enabled = v;
+        
+        v = ActiveInPlanView;
+        OptionAttribute.Get (t, nameof (PanModifierInPlanView)).Enabled = v;
+        OptionAttribute.Get (t, nameof (RotateModifierInPlanView)).Enabled = v;
+        OptionAttribute.Get (t, nameof (ZoomModifierInPlanView)).Enabled = v;
+        OptionAttribute.Get (t, nameof (PresetsModifierInPlanView)).Enabled = v;
+
+        v = Active || ActiveInPlanView;
+        OptionAttribute.Get (t, nameof (ReverseZoom)).Enabled = v;
+        OptionAttribute.Get (t, nameof (ZoomForce)).Enabled = v;
+        OptionAttribute.Get (t, nameof (PresetSteps)).Enabled = v;
+        OptionAttribute.Get (t, nameof (PresetForce)).Enabled = v;
+        OptionAttribute.Get (t, nameof (PresetsAlignCPlane)).Enabled = v;
+
+        r &= _Validate(g_modnames);
         r &= _Validate(g_modnamesP);
         return r;
 
@@ -424,164 +497,177 @@ public class NavigationSettings : Settings, IControllerSettings
 }
 
 
-public class NavigationSettingsLayout : SettingsLayout<NavigationSettings>
+public class NavigationSettingsLayout : SettingsLayout <NavigationSettings>
 {
     readonly EF.Control _pmod, _pmodP;
     readonly EF.Control _rmod, _rmodP;
     readonly EF.Control _zmod, _zmodP, _zinv, _zforce;
     readonly EF.Control _xmod, _xmodP, _xsteps, _xforce, _xcplane;
 
-    public NavigationSettingsLayout(NavigationSettings options) : base(options)
+    public NavigationSettingsLayout (NavigationSettings options) : base (options)
     {
-        options.PropertyChanged += _OnDataChanged;
-
-        var active = GetControl(nameof(options.Active));
-        var activeP = GetControl(nameof(options.ActiveInPlanView));
-        var delay = GetControl(nameof(options.DelayBetweenModes));
-        var marker = GetControl(nameof(options.Marker));
-        var debug = GetControl(nameof(options.Debug));
+        var active  = GetControl (nameof (options.Active));
+        var activeP = GetControl (nameof (options.ActiveInPlanView));
+        var delay   = GetControl (nameof (options.DelayBetweenModes));
+        var marker  = GetControl (nameof (options.Marker));
+        var debug   = GetControl (nameof (options.Debug));
         #if DEBUG
-        var showcam = GetControl(nameof(options.ShowCamera));
+        var showcam = GetControl (nameof (options.ShowCamera));
         #endif
 
-        _pmod = GetControl(nameof(options.PanModifier));
-        _pmodP = GetControl(nameof(options.PanModifierInPlanView));
+        _pmod  = GetControl (nameof (options.PanModifier));
+        _pmodP = GetControl (nameof (options.PanModifierInPlanView));
 
-        _rmod = GetControl(nameof(options.RotateModifier));
-        _rmodP = GetControl(nameof(options.RotateModifierInPlanView));
+        _rmod  = GetControl (nameof (options.RotateModifier));
+        _rmodP = GetControl (nameof (options.RotateModifierInPlanView));
 
-        _zmod = GetControl(nameof(options.ZoomModifier));
-        _zmodP = GetControl(nameof(options.ZoomModifierInPlanView));
-        _zinv = GetControl(nameof(options.ReverseZoom));
-        _zforce = GetControl(nameof(options.ZoomForce));
+        _zmod   = GetControl (nameof (options.ZoomModifier));
+        _zmodP  = GetControl (nameof (options.ZoomModifierInPlanView));
+        _zinv   = GetControl (nameof (options.ReverseZoom));
+        _zforce = GetControl (nameof (options.ZoomForce));
 
-        _xmod = GetControl(nameof(options.PresetsModifier));
-        _xmodP = GetControl(nameof(options.PresetsModifierInPlanView));
-        _xsteps = GetControl(nameof(options.PresetSteps));
-        _xforce = GetControl(nameof(options.PresetForce));
-        _xcplane = GetControl(nameof(options.PresetsAlignCPlane));
+        _xmod    = GetControl (nameof (options.PresetsModifier));
+        _xmodP   = GetControl (nameof (options.PresetsModifierInPlanView));
+        _xsteps  = GetControl (nameof (options.PresetSteps));
+        _xforce  = GetControl (nameof (options.PresetForce));
+        _xcplane = GetControl (nameof (options.PresetsAlignCPlane));
 
         //
 
-        Section(
+        Section (
             "Global",
-            Row("Active", HBox(active, activeP)),
-            Row("Delay", delay)
+            Row ("Active", HBox(active, activeP)),
+            Row ("Delay", delay)
         );
 
-        Section(
+        Section (
             "Pan",
-            Row("Modifier", HBox(_pmod, _pmodP))
+            Row ("Modifier", HBox(_pmod, _pmodP))
         );
 
-        Section(
+        Section (
             "Rotation",
-            Row("Modifier", HBox(_rmod, _rmodP))
+            Row ("Modifier", HBox(_rmod, _rmodP))
         );
 
-        Section(
+        Section (
             "Zoom",
-            Row("Modifier", HBox(_zmod, _zmodP)),
-            Row("Force", _zforce),
-            Row("Reverse", _zinv)
+            Row ("Modifier", HBox(_zmod, _zmodP)),
+            Row ("Force", _zforce),
+            Row ("Reverse", _zinv)
         );
 
         Section(
             "Presets",
-            Row("Modifier", HBox(_xmod, _xmodP)),
-            Row("Steps", _xsteps),
-            Row("Sensitivity", _xforce),
-            Row("Align CPlane", _xcplane)
+            Row ("Modifier", HBox(_xmod, _xmodP)),
+            Row ("Steps", _xsteps),
+            Row ("Sensitivity", _xforce),
+            Row ("Align CPlane", _xcplane)
         );
 
         Section(
             "Advanced",
-            Row("Marker", marker),
-            Row("Debug", debug)
+            Row ("Marker", marker),
+            Row ("Debug", debug)
             #if DEBUG
-            , Row("Show camera", showcam)
+            , Row ("Show camera", showcam)
             #endif
         );
-
     }
 
-    protected override void OnLoadComplete(EventArgs e)
+    protected override void UpdateControls (string? propertyChanged)
     {
-        base.OnLoadComplete(e);
-        _InitControlTags();
-        _UpdateActive();
-        _UpdateActiveInPlanView();
-        _UpdateActiveShared();
-        _UpdateModifiers();
-    }
+        DBG.Log (propertyChanged ?? "Initialization");
 
-    void _OnDataChanged(object sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
+        base.UpdateControls (propertyChanged);
+        switch (propertyChanged)
         {
-            case nameof(Data.Active):
+            case null:
+                // _InitControlTags();
                 _UpdateActive();
-                _UpdateActiveShared();
-                break;
-
-            case nameof(Data.ActiveInPlanView):
                 _UpdateActiveInPlanView();
                 _UpdateActiveShared();
+                // _UpdateModifiers();
+                break;
+
+            case nameof(Settings.Active):
+                _UpdateActive ();
+                _UpdateActiveShared ();
+                break;
+
+            case nameof(Settings.ActiveInPlanView):
+                _UpdateActiveInPlanView ();
+                _UpdateActiveShared ();
                 break;
 
             default:
-                _UpdateModifiers();
+                // _UpdateModifiers ();
                 break;
         }
+        
     }
 
-    void _UpdateActive()
+    void _UpdateActive ()
     {
-        var v = Data.Active;
-        _pmod.Enabled = v;
-        _rmod.Enabled = v;
-        _zmod.Enabled = v;
-        _xmod.Enabled = v;
+        // var v = Settings.Active;
+        // _pmod.Enabled = v;
+        // _rmod.Enabled = v;
+        // _zmod.Enabled = v;
+        // _xmod.Enabled = v;
     }
 
-    void _UpdateActiveInPlanView()
+    void _UpdateActiveInPlanView ()
     {
-        var v = Data.ActiveInPlanView;
-        _pmodP.Enabled = v;
-        _rmodP.Enabled = v;
-        _zmodP.Enabled = v;
-        _xmodP.Enabled = v;
+        // var v = Settings.ActiveInPlanView;
+        // _pmodP.Enabled = v;
+        // _rmodP.Enabled = v;
+        // _zmodP.Enabled = v;
+        // _xmodP.Enabled = v;
     }
 
-    void _UpdateActiveShared()
+    void _UpdateActiveShared ()
     {
-        var v = Data.Active || Data.ActiveInPlanView;
-        _zinv.Enabled = v;
-        _zforce.Enabled = v;
-        _xmod.Enabled = v;
-        _xmodP.Enabled = v;
-        _xsteps.Enabled = v;
-        _xforce.Enabled = v;
-        _xcplane.Enabled = v;
+        // var v = Settings.Active || Settings.ActiveInPlanView;
+        // _zinv.Enabled = v;
+        // _zforce.Enabled = v;
+        // _xmod.Enabled = v;
+        // _xmodP.Enabled = v;
+        // _xsteps.Enabled = v;
+        // _xforce.Enabled = v;
+        // _xcplane.Enabled = v;
     }
 
-    void _InitControlTags()
-    {
-        foreach (var (c, a) in PropertyToControls.Values)
-        {
-            c.Tag = c.BackgroundColor;
-        }
-    }
+    // void _InitControlTags ()
+    // {
+    //     foreach (var (c, a) in PropertyToControls.Values)
+    //     {
+    //         c.Tag = c.BackgroundColor;
+    //     }
+    // }
 
-    void _UpdateModifiers()
-    {
-        Data.Validate();
-        foreach (var (c, a) in PropertyToControls.Values)
-        {
-            c.BackgroundColor = a.Valid
-                            ? (ED.Color)c.Tag
-                            : ED.Colors.IndianRed;
-        }
-    }
+    // void _UpdateModifiers()
+    // {
+    //     Settings.Validate();
+    //     foreach (var (c, a) in PropertyToControls.Values)
+    //     {
+    //         c.BackgroundColor = a.Valid
+    //                         ? (ED.Color)c.Tag
+    //                         : ED.Colors.IndianRed;
+    //     }
+    // }
 }
 
+
+class NavigationSettingsForm : FloatingForm
+{
+    public NavigationSettingsForm (NavigationSettings settings)
+    {
+        Title = "Navigation settings";
+
+        var control = new NavigationSettingsLayout(settings);
+        control.ButtonOk.Click += delegate { Close(); };
+        control.ButtonCancel.Click += delegate { Close(); };
+
+        Content = control;
+    }
+}

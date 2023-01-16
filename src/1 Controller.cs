@@ -13,19 +13,19 @@ using ED = Eto.Drawing;
 
 using ON = Rhino.Geometry;
 using RD = Rhino.Display;
-using RO = Rhino.DocObjects;
 using RUI = Rhino.UI;
 using RhinoDoc = Rhino.RhinoDoc;
-using RhinoApp = Rhino.RhinoApp;
 
 
 #if RHP
 
 using Libx.Fix.AutoCameraTarget.Ui;
+using Libx.Fix.AutoCameraTarget.Ui.Native;
 using Libx.Fix.AutoCameraTarget.Config;
 using Libx.Fix.AutoCameraTarget.Intersection;
+using Libx.Fix.AutoCameraTarget.Views;
 
-namespace Libx.Fix.AutoCameraTarget.Views;
+namespace Libx.Fix.AutoCameraTarget;
 
 #endif
 
@@ -44,7 +44,9 @@ public enum NavigationModifier
 }
 
 
-public static class ModifierExtensions
+#if false
+file
+static class ModifierExtensions
 {
     // The only difference between the navigation modifier and the keyboard modifier
     // is that the navigation modifier has a "Disabled" field.
@@ -75,9 +77,10 @@ public static class ModifierExtensions
         };
     }
 }
+#endif
 
 
-public interface IControllerSettings : ISettings, IIntersectionSettings, ICameraSettings, INavigationSettings
+public interface IControllerSettings : ICameraSettings, IIntersectionSettings //, ISettings
 {
     bool Active { get; }
     bool ActiveInPlanView { get; }
@@ -103,20 +106,19 @@ public interface IControllerSettings : ISettings, IIntersectionSettings, ICamera
 }
 
 
-public class Controller : NavigationListener 
+public class Controller : INavigationController  
 {
     RhinoDoc _doc;
+    Navigator _navigator;
+    readonly LiveCamera _cam;
 
     public readonly IntersectionData Data;
 
-    readonly Camera _cam;
-
-    
-    public new readonly IControllerSettings Settings;
+    public readonly IControllerSettings Settings;
 
 
     # nullable disable // _doc
-    public Controller (IControllerSettings options, IntersectionData data) : base (options)
+    public Controller (IControllerSettings options, IntersectionData data) 
     {
         Settings = options;
         Data = data;
@@ -125,9 +127,9 @@ public class Controller : NavigationListener
     #nullable enable
 
 
-    #region Start / Stop
+    #region Start/Stop (INavigationCallbacks)
 
-    public override bool CanRun (RUI.MouseCallbackEventArgs e)
+    public bool CanRun (RUI.MouseCallbackEventArgs e)
     {
         // Handle right mouse button only.
         // TODO: preserve/override CTRL+SHIFT
@@ -140,13 +142,13 @@ public class Controller : NavigationListener
         if (e.View.ActiveViewport.IsPlanView)
         {
             if (Settings.ActiveInPlanView == false ||
-                Settings.GetAssociatedMode (cmod.ToNavigationModifier (), inPlanView: true) == NavigationMode.Unknown
+                Settings.GetAssociatedMode (_ToNavigationModifier (cmod), inPlanView: true) == NavigationMode.Unknown
             ) return false;
         }
         else
         {
             if (Settings.Active == false ||
-                Settings.GetAssociatedMode (cmod.ToNavigationModifier (), inPlanView: false) == NavigationMode.Unknown
+                Settings.GetAssociatedMode (_ToNavigationModifier (cmod), inPlanView: false) == NavigationMode.Unknown
             ) return false;
         }
         
@@ -158,21 +160,22 @@ public class Controller : NavigationListener
         return true;
     }
 
-    protected override bool OnStartNavigation (RD.RhinoViewport viewport, SD.Point viewportPoint)
+    public bool OnStartNavigation (RD.RhinoViewport viewport, SD.Point viewportPoint, Navigator navigator)
     {
         Data.Viewport = viewport;
         Data.ViewportPoint = new SD.Point (viewportPoint.X, viewportPoint.Y);
         _doc = viewport.ParentView.Document;
+        _navigator = navigator;
 
         // Calculate the point of intersection under the mouse cursor.
         // If there is nothing visible in the view, the intersection is placed on the camera position.
         // TODO: Give an option for this.
         if (Settings.Debug) {
             Intersector.StartPerformenceLog ();
-            Intersector.Compute (Data, viewport.CameraLocation);
+            Intersector.Compute (Data, viewport.CameraTarget /*, viewport.CameraLocation*/);
             Intersector.StopPerformenceLog (Data);
         } else {
-            Intersector.Compute (Data, viewport.CameraLocation);
+            Intersector.Compute (Data, viewport.CameraTarget /*, viewport.CameraLocation*/);
         }
 
         // Initialize properties.
@@ -187,8 +190,8 @@ public class Controller : NavigationListener
         _UpdateActions (viewport.IsPlanView);
 
         // Displays visual information.
-        if (Settings.Marker) IntersectionConduit.Show (Data);
-        if (Settings.ShowCamera) CameraConduit.Show (viewport);
+        if (Settings.Marker) Intersector.ShowDebugConduit (Data);
+        if (Settings.ShowCamera) LiveCamera.ShowDebugConduit (viewport);
 
         VirtualCursor.Init (new (viewportPoint.X, viewportPoint.Y));
 
@@ -200,7 +203,7 @@ public class Controller : NavigationListener
     void _UpdateActions (bool _inplanview)
     {
         foreach (KeyboardModifier n in Enum.GetValues (typeof (KeyboardModifier)))
-            SetModifierCallback (n, null, null);
+            _navigator.SetModifierCallback (n, null, null);
 
         NavigationModifier  rmod;
         NavigationModifier  pmod;
@@ -222,13 +225,15 @@ public class Controller : NavigationListener
             xmod = Settings.PresetsModifier;
         }
 
-        if (rmod != NavigationModifier.Disabled) SetModifierCallback (rmod.ToKeyboardModifier (), _OnRotation, NavigationMode.Rotate);
-        if (pmod != NavigationModifier.Disabled) SetModifierCallback (pmod.ToKeyboardModifier (), _OnPan, NavigationMode.Pan);
-        if (zmod != NavigationModifier.Disabled) SetModifierCallback (zmod.ToKeyboardModifier (), _OnZoom, NavigationMode.Zoom);
-        if (xmod != NavigationModifier.Disabled) SetModifierCallback (xmod.ToKeyboardModifier (), _OnPresets, NavigationMode.Presets);
+        if (rmod != NavigationModifier.Disabled) _navigator.SetModifierCallback (_ToKeyboardModifier (rmod), _OnRotation, NavigationMode.Rotate);
+        if (pmod != NavigationModifier.Disabled) _navigator.SetModifierCallback (_ToKeyboardModifier (pmod), _OnPan, NavigationMode.Pan);
+        if (zmod != NavigationModifier.Disabled) _navigator.SetModifierCallback (_ToKeyboardModifier (zmod), _OnZoom, NavigationMode.Zoom);
+        if (xmod != NavigationModifier.Disabled) _navigator.SetModifierCallback (_ToKeyboardModifier (xmod), _OnPresets, NavigationMode.Presets);
+
+
     }
 
-    protected override void OnActionChange (object? previousTag, object? currentTag)
+    public void OnActionChange (object? previousTag, object? currentTag)
     {
         switch (previousTag)
         {
@@ -246,13 +251,13 @@ public class Controller : NavigationListener
         }
     }
 
-    protected override void OnStopNavigation ()
+    public void OnStopNavigation ()
     {
         // TODO: Testez si la cible est devant la caméra.
         if (Data.Status != IntersectionStatus.None)
             Data.Viewport.SetCameraTarget (Data.TargetPoint, updateCameraLocation: false);
-        IntersectionConduit.Hide ();
-        CameraConduit.hide ();
+        Intersector.HideDebugConduit ();
+        LiveCamera.HideDebugConduit ();
         VirtualCursor.Hide ();
 
         // TODO: Si la touche CapsLock est enfoncée avant le bouton de la souris.
@@ -270,6 +275,35 @@ public class Controller : NavigationListener
             NavigationMode.Zoom    => VirtualCursorIcon.Glass,
             NavigationMode.Presets => VirtualCursorIcon.Axis,
             _ => VirtualCursorIcon.None
+        };
+    }
+
+    // The only difference between the navigation modifier and the keyboard modifier
+    // is that the navigation modifier has a "Disabled" field.
+
+    static KeyboardModifier _ToKeyboardModifier (NavigationModifier modifier)
+    {
+        return modifier switch
+        {
+            NavigationModifier.Alt     => KeyboardModifier.Alt,
+            NavigationModifier.Capital => KeyboardModifier.Capital,
+            NavigationModifier.Ctrl    => KeyboardModifier.Ctrl,
+            NavigationModifier.Shift   => KeyboardModifier.Shift,
+            NavigationModifier.None    => KeyboardModifier.None,
+            _                          => KeyboardModifier.None,
+        };
+    }
+
+    static NavigationModifier _ToNavigationModifier (KeyboardModifier modifier)
+    {
+        return modifier switch
+        {
+            KeyboardModifier.Alt     => NavigationModifier.Alt,
+            KeyboardModifier.Capital => NavigationModifier.Capital,
+            KeyboardModifier.Ctrl    => NavigationModifier.Ctrl,
+            KeyboardModifier.Shift   => NavigationModifier.Shift,
+            KeyboardModifier.None    => NavigationModifier.None,
+            _                   => NavigationModifier.None,
         };
     }
 
@@ -388,7 +422,7 @@ public class Controller : NavigationListener
     {
         if (Settings.PresetsAlignCPlane == false) return;
 
-        var bnormal = Viewport.CameraZ;
+        var bnormal = Data.Viewport.CameraZ;
         bnormal.Unitize ();
         var inormal = -bnormal;
 
@@ -401,7 +435,7 @@ public class Controller : NavigationListener
                 cnormal.EpsilonEquals (inormal, EPSILON) == false
             ) continue;
 
-            Viewport.SetConstructionPlane (plane);
+            Data.Viewport.SetConstructionPlane (plane);
 
             // TODO: Réaligner la caméra pour supprimer le bruit.
             // var cosZ = Math.Acos (plane.ZAxis.Z);

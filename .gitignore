@@ -5,15 +5,12 @@
 **/*.svg
 **/*.3dm*
 **/*.gh
+**/*.mp4
 
 /obj
 /bin
 /csx
 /old
+/doc
 
-/yak/**/*.rhp
-/yak/**/*.pdb
-/yak/**/*.rui
-/yak/**/*.xml
-/yak/**/*.png
-/yak/**/*.yml
+/yak/**

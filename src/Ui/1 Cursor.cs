@@ -22,6 +22,7 @@ using RD = Rhino.Display;
 
 
 #if RHP
+using Libx.Fix.AutoCameraTarget.Ui.Native;
 namespace Libx.Fix.AutoCameraTarget.Ui;
 #endif
 
@@ -32,20 +33,17 @@ public static class Cursor
 {
     #if WIN32
 
-    [DllImport("user32.dll")]
-    static extern int ShowCursor(bool bShow);
-
     static int _ccount = int.MaxValue;
     public static void HideCursor ()
     {
-        while (_ccount >= 0) _ccount = ShowCursor (false);
+        while (_ccount >= 0) _ccount = UnsafeNativeMethods.ShowCursor (false);
         return;
     }
 
     public static void ShowCursor ()
     {
-        while (_ccount > 0) _ccount = ShowCursor (false);
-        while (_ccount < 1) _ccount = ShowCursor (true);
+        while (_ccount > 0) _ccount = UnsafeNativeMethods.ShowCursor (false);
+        while (_ccount < 1) _ccount = UnsafeNativeMethods.ShowCursor (true);
         return;
     }
     
@@ -108,6 +106,7 @@ public class VirtualCursor : RD.DisplayConduit
             g_instance.Enabled = false;
     }
 
+
     #region Ressources
 
     #if RHP
@@ -129,6 +128,7 @@ public class VirtualCursor : RD.DisplayConduit
 
     #endregion
 
+
     #region Position
 
     static ED.Point _initiapos;
@@ -143,6 +143,7 @@ public class VirtualCursor : RD.DisplayConduit
     }
 
     #endregion
+
 
     // DrawOverlay ne dessine pas au dessus des objets sélectionnés et du Gumball.
     protected override void DrawOverlay (RD.DrawEventArgs e)

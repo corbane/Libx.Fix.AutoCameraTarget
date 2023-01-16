@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBG</title>
+    <style>
+        body {
+            margin-bottom: 10px;
+        }
+        pre {
+            margin: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <output id="rhino-outputs">
+    </output>
+    
+    <script>
+        /// @ts-check
+
+        /**
+         *  @typedef {{
+         *      stylename: string,
+         *      csscolor: string,
+         *      elements: HTMLElement[]
+         *  }} Item
+         * 
+         *  @type {Record <string, Item>}
+         */
+        const messages = {}
+
+        /** @type {Record <string, string>} */
+        const cls2msg = {}
+
+        const output = document.getElementById ("rhino-outputs")
+        
+
+
+        const styleelement = document.createElement ("style");
+        document.head.append (styleelement)
+
+        const activestyle = document.createElement ("style");
+        document.head.append (activestyle)
+
+        var _styleid = 0;
+        function _newStyleName () { return "K"+(_styleid++) }
+
+        function _newCssColor ()
+        {
+            return "#" + Math.floor (Math.random()*16777215).toString(16) + "22";
+        }
+
+        function _updateStyle ()
+        {
+            var newstyle = ""
+            for (var k in messages)
+            {
+                var item = messages[k]
+                newstyle += `.${item.stylename} { background-color: ${item.csscolor}; }\n`
+            }
+            
+            styleelement.innerHTML = newstyle
+        }
+
+        /** @param {string} activeclass **/
+        function _updateActiveCssClass (activeclass)
+        {
+            if (typeof activeclass == "string")
+                activestyle.innerHTML = `.${activeclass} { background-color: gainsboro !important; }\n`
+        }
+
+
+
+        /** @param {string} str **/
+        function _getKey (str)
+        {
+            if (str == null || str[0] != '[')
+                return null
+            
+            var end = str.indexOf (']')
+            return end < 0 ? null : str.substring (1, end)
+        }
+
+        /** @param {string} key **/
+        function _getClassName (key)
+        {
+            var end = key.indexOf ('.')
+            return end < 0 ? key : key.substring (0, end)
+        }
+
+        /** @param {string} str **/
+        function _createLineElement (str)
+        {
+            var pre = document.createElement ("pre")
+            pre.append (str)
+
+            var key = _getKey (str)
+            if (key == null)
+                return pre
+            
+            pre.dataset.key = key
+
+            var cls = _getClassName (key);
+            var rgb = cls2msg[cls];
+            if (typeof rgb != "string")
+                cls2msg[cls] = rgb = _newCssColor ();
+
+            var item = messages[key]
+            if (item != null) 
+            {
+                pre.classList.add (item.stylename);
+                item.elements.push (pre)
+            }
+            else
+            {
+                var css  = _newStyleName ();
+                pre.classList.add (css);
+                messages[key] = {
+                    stylename: css,
+                    csscolor: rgb,
+                    elements: [pre]
+                }
+            }
+
+            pre.addEventListener ("mouseover", _onMouseOver)
+
+            return pre
+        }
+
+        /** @param {MouseEvent} evt **/
+        function _onMouseOver (evt)
+        {
+            if ( ! (evt.target instanceof HTMLElement))
+                return;
+
+            var key = evt.target.dataset.key
+            if (typeof key == "string")
+            _updateActiveCssClass (evt.target.classList.item (0))
+        }
+
+
+        var _timeout = -1;
+        function _startDebouncer ()
+        {
+            if (_timeout > -1)
+            {
+                window.clearTimeout (_timeout)
+                _timeout = -1
+            }
+
+            function ondebounce ()
+            {
+                output.append (document.createElement ("hr"))
+                _updateStyle ();
+                _timeout = -1
+            }
+
+            _timeout = window.setTimeout (ondebounce, 500)
+        }
+
+
+        const socket = new WebSocket("ws://localhost:8080")
+
+        socket.addEventListener ("open", evt =>
+        {
+            output.append (_createLineElement ("\nConnextion open!"))
+        });
+
+        socket.addEventListener ("error", evt =>
+        {
+            output.append (_createLineElement ("\nConnextion error! "))
+        })
+
+        socket.addEventListener ("close", evt =>
+        {
+            output.append (_createLineElement ("\nConnextion close! "))
+        })
+
+        socket.addEventListener ("message", evt =>
+        {
+            output.append (_createLineElement (evt.data))
+            _startDebouncer ();
+            window.scrollTo(0, document.body.scrollHeight);
+        });
+    
+    </script>
+
+</body>
+</html>

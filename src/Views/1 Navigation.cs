@@ -18,6 +18,7 @@ using RUI = Rhino.UI;
 #if RHP
 
 using Libx.Fix.AutoCameraTarget.Ui;
+using Libx.Fix.AutoCameraTarget.Ui.Native;
 using Libx.Fix.AutoCameraTarget.Config;
 
 namespace Libx.Fix.AutoCameraTarget.Views;
@@ -25,7 +26,7 @@ namespace Libx.Fix.AutoCameraTarget.Views;
 #endif
 
 
-public interface INavigationSettings : ISettings
+public interface INavigationSettings //: ISettings
 {
     /// <summary>
     ///     Delay between modes.. </summary>
@@ -33,40 +34,60 @@ public interface INavigationSettings : ISettings
 }
 
 
-/// <summary>
-///     Wrapper class above <see cref="NavigationListener"/> </summary>
-class RMBListener : RUI.MouseCallback
+public interface INavigationController
 {
-    NavigationListener _listener;
+    /// <summary>
+    ///     Called before activating the mouse listener to know whether to do it or not. </summary>
+    bool CanRun (RUI.MouseCallbackEventArgs e);
 
-    public RMBListener (NavigationListener listener)
-    {
-        _listener = listener;
-    }
+    /// <summary>
+    ///     Called when the mouse first moves. </summary>
+    bool OnStartNavigation (RD.RhinoViewport viewport, SD.Point viewportPoint, Navigator navigator);
 
-    protected override void OnEndMouseDown (RUI.MouseCallbackEventArgs e)
-    {
-        if (_listener.CanRun (e))
-            _listener.Start (e);
-    }
+    /// <summary>
+    ///     Function called when the modifier key and its associated action change.
+    ///     see <seealso cref="Navigator.SetModifierCallback"/> </summary>
+    /// <param name="previousTag">
+    ///     Previously active action tag</param>
+    /// <param name="currentTag">
+    ///     New active action tag</param>
+    void OnActionChange (object? previousTag, object? currentTag);
+
+    /// <summary>
+    ///     Called when the right mouse button is up </summary>
+    void OnStopNavigation ();
+}
+
+
+/// <remarks>
+///     `file` filter prevents the use of `NavigationListener` as a field of the `Navigator` class (a non file class). </remarks>
+internal interface IMouseListener
+{
+    public void SetModifierCallback (KeyboardModifier modifier, Action <ED.Point>? action, object? tag);
+    void Start (RUI.MouseCallbackEventArgs e);
 }
 
 
 /// <summary>
 ///     Base class for running functions when the mouse moves. </summary>
-public class NavigationListener : RUI.MouseCallback
+#if RHP
+file
+#endif
+class MouseListener : RUI.MouseCallback, IMouseListener
 {
     const MethodImplOptions INLINE = MethodImplOptions.AggressiveInlining;
 
-    public readonly INavigationSettings Settings;
+    Navigator _navigator;
+    INavigationController _controller;
 
     public RD.RhinoViewport Viewport { get; private set; }
 
 
     #nullable disable // Viewport
-    public NavigationListener (INavigationSettings settings)
+    public MouseListener (Navigator navigator)
     {
-        Settings = settings;
+        _navigator = navigator;
+        _controller = navigator.Controller;
     } 
     #nullable enable
 
@@ -88,7 +109,7 @@ public class NavigationListener : RUI.MouseCallback
     [MethodImpl(INLINE)] protected void StartPause ()
     {
         _pause = true;
-        System.Threading.Tasks.Task.Delay (Settings.DelayBetweenModes).ContinueWith ((_) => { _pause = false; });
+        System.Threading.Tasks.Task.Delay (_navigator.Settings.DelayBetweenModes).ContinueWith ((_) => { _pause = false; });
     }
 
     #endregion
@@ -160,33 +181,7 @@ public class NavigationListener : RUI.MouseCallback
     #endregion
 
 
-    #region Sub classes methods
-
-    /// <summary>
-    ///     Called before activating the mouse listener to know whether to do it or not. </summary>
-    public virtual bool CanRun (RUI.MouseCallbackEventArgs e) { return false; }
-
-    /// <summary>
-    ///     Called when the mouse first moves. </summary>
-    protected virtual bool OnStartNavigation (RD.RhinoViewport viewport, SD.Point viewportPoint) { return true; }
-
-    /// <summary>
-    ///     Function called when the modifier key and its associated action change.
-    ///     see <seealso cref="SetModifierCallback"/> </summary>
-    /// <param name="previousTag">
-    ///     Previously active action tag</param>
-    /// <param name="currentTag">
-    ///     New active action tag</param>
-    protected virtual void OnActionChange (object? previousTag, object? currentTag) { /**/ }
-
-    /// <summary>
-    ///     Called when the right mouse button is up </summary>
-    protected virtual void OnStopNavigation () { /**/ }
-
-    #endregion
-
-
-    internal void Start (RUI.MouseCallbackEventArgs e)
+    public void Start (RUI.MouseCallbackEventArgs e)
     {
         Viewport   = e.View.ActiveViewport;
         _started   = false;
@@ -201,7 +196,7 @@ public class NavigationListener : RUI.MouseCallback
         if (_started == false) {
             _started = true;
                 
-            Enabled = OnStartNavigation (Viewport, e.ViewportPoint);
+            Enabled = _controller.OnStartNavigation (Viewport, e.ViewportPoint, _navigator);
             if (Enabled) e.Cancel = true;
             else return;
 
@@ -215,7 +210,7 @@ public class NavigationListener : RUI.MouseCallback
             Cursor.HideCursor ();
 
             _SetActiveModifier (mod);
-            OnActionChange (null, _GetActionTag (mod));
+            _controller.OnActionChange (null, _GetActionTag (mod));
 
             return;
         }
@@ -248,7 +243,7 @@ public class NavigationListener : RUI.MouseCallback
         var cmodifier = Keyboard.GetCurrentModifier ();
         if (amodifier != cmodifier)
         {
-            OnActionChange (_GetActionTag(amodifier), _GetActionTag(cmodifier));
+            _controller.OnActionChange (_GetActionTag(amodifier), _GetActionTag(cmodifier));
             _SetActiveModifier (cmodifier);
             StartPause ();
         }
@@ -272,15 +267,53 @@ public class NavigationListener : RUI.MouseCallback
         
         if (_started)
         {
-            OnActionChange (_GetActionTag (_GetActiveModifier ()), null);
+            _controller.OnActionChange (_GetActionTag (_GetActiveModifier ()), null);
 
             e.Cancel = true;
             var pos = VirtualCursor.Position;
             Cursor.SetLimitedCursorPosition (pos.X, pos.Y);
-            OnStopNavigation ();
+            _controller.OnStopNavigation ();
         }
         
         Cursor.ShowCursor ();
+    }
+}
+
+
+/// <remarks>
+///     Wrapper class above <see cref="MouseListener"/> </remarks>
+public class Navigator : RUI.MouseCallback
+{
+    public INavigationSettings Settings { get; }
+    public INavigationController Controller { get; }
+
+    IMouseListener _listener;
+
+    public Navigator (INavigationSettings settings, INavigationController controller)
+    {
+        Settings = settings;
+        Controller = controller;
+        _listener = new MouseListener (this);
+    }
+
+    /// <summary>
+    ///     Define a callback function when moving the mouse.</summary>
+    /// <param name="modifier">
+    ///     One of the keys from <see cref="KeyboardModifier"/>
+    ///     or <see cref="KeyboardModifier.None"/> if no modifier is required for this action.</param>
+    /// <param name="action">
+    ///     The action to execute.</param>
+    /// <param name="tag">
+    ///     Value sent to `OnActionChange` when modifier key and action change.</param>
+    public void SetModifierCallback (KeyboardModifier modifier, Action <ED.Point>? action, object? tag)
+    {
+        _listener.SetModifierCallback (modifier, action, tag);
+    }
+
+    protected override void OnEndMouseDown (RUI.MouseCallbackEventArgs e)
+    {
+        if (Controller.CanRun (e))
+            _listener.Start (e);
     }
 }
 

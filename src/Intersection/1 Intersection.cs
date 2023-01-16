@@ -25,7 +25,7 @@ namespace Libx.Fix.AutoCameraTarget.Intersection;
 #endif
 
 
-public partial interface IIntersectionSettings : ISettings
+public partial interface IIntersectionSettings //: ISettings
 {
     public bool Marker { get; }
     public bool Debug { get; }
@@ -381,10 +381,23 @@ public static class Intersector
         #endif
     }
 
+    public static void ShowDebugConduit (IntersectionData data)
+    {
+        IntersectionConduit.Show (data);
+    }
+
+    public static void HideDebugConduit ()
+    {
+        IntersectionConduit.Hide ();
+    }
+
     #endregion
 }
 
 
+#if RHP
+file
+#endif
 class IntersectionConduit : RD.DisplayConduit
 {
     static IntersectionConduit? g_instance;

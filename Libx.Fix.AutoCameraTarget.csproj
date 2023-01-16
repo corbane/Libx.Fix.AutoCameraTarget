@@ -4,7 +4,7 @@
     
     <PropertyGroup>
         <AssemblyTitle>AutoCameraTarget</AssemblyTitle>
-        <Version>2.1.0</Version>
+        <Version>2.2.0</Version>
         <Description>this plugin interpret the `Ctrl+Shift+RMB` keys as the default navigation behavior.</Description>
     </PropertyGroup>
     
@@ -45,17 +45,22 @@
         <Reference Private="False" Include="Rhino.UI" HintPath="C:\Program Files\Rhino 7\System\Rhino.UI.dll" />
     </ItemGroup>
     
+    <ItemGroup Condition="$(Configuration) == 'Debug'">
+        <Reference Private="False" Include="websocket-sharp" HintPath="C:\Program Files\Rhino 7\System\websocket-sharp.dll" />
+    </ItemGroup>
+    
     <!-- Builds -->
     
     <PropertyGroup>
         <OutputType>Library</OutputType>
         <TargetExt>.rhp</TargetExt>
         <GenerateDocumentationFile>True</GenerateDocumentationFile>
-        <DefineConstants>RHP;GHA</DefineConstants>
+        <DefineConstants>CS11;RHP;GHA</DefineConstants>
     </PropertyGroup>
 
     <PropertyGroup Condition="$(Configuration) == 'Debug'">
         <DebugType>portable</DebugType>
+        <PlatformTarget>x64</PlatformTarget>
         <StartProgram>C:\Program Files\Rhino 7\System\Rhino.exe</StartProgram>
         <StartArguments></StartArguments>
         <StartAction>Program</StartAction>

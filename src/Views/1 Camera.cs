@@ -28,104 +28,78 @@ namespace Libx.Fix.AutoCameraTarget.Views;
 #endif
 
 
-public interface ICameraSettings : ISettings
+public interface ICameraSettings //: ISettings
 {
     bool ShowCamera {  get; }
 }
 
 
-/// <summary>
-/// Provides utility functions to manipulate the camera in view. <br/>
-/// Before each use, this class must be initialized with the 'Init' function
-/// and the initial camera **MUST** be aligned with the horizon (i.e. the `RhinoViewport.CameraX.Z == 0`).
-/// the calculation of transformations is optimized in a single pass in <see cref="_PanTurnMoveZoom"/>
-/// and corresponds to the transformations:
-/// <code>
-///     Scale (camera-target * Zoom)
-///     * Translation (Pos[X|Y|Z])    // Pos[X|Y|Z] is the target point.
-///     * Rotation (RotZ, ZAxis)
-///     * Rotation (RotX, XAxis)
-///     * Translation (Pan[X|Y|Z])
-/// </code>
-/// </summary>
-public class Camera
+public interface ICameraMatrix
 {
-    #nullable disable
-    RD.RhinoViewport _vp;
-    RO.ViewportInfo _vpinfo;
-    #nullable enable
-
-    ON.Transform _m = ON.Transform.Identity;
-    ON.Interval _initialSizeX;
-    ON.Interval _initialSizeY;
-
-    ON.Point3d _target;
-
+    
     /// <summary> Offset along camera X axis. </summary>
-    public double PanX;
+    public double PanX { get; set; }
+
     /// <summary> Offset along camera Y (Up) axis </summary>
-    public double PanY;
+    public double PanY { get; set; }
+
     /// <summary> Offset along camera Z (Direction) axis </summary>
-    public double PanZ;
+    public double PanZ { get; set; }
+
 
     /// <summary> Rotation of the camera around the X axis.
     /// This rotation is performed before the Z rotation. </summary>
-    public double RotX;
+    public double RotX { get; set; }
+
     /// <summary> Rotation of the camera around the Z axis.
     /// This rotation is performed after the X rotation. </summary>
-    public double RotZ;
+    public double RotZ { get; set; }
+
 
     /// <summary> Global X position of all transformations </summary>
-    public double PosX;
+    public double PosX { get; set; }
+
     /// <summary> Global Y position of all transformations </summary>
-    public double PosY;
+    public double PosY { get; set; }
+
     /// <summary> Global Z position of all transformations </summary>
-    public double PosZ;
+    public double PosZ { get; set; }
 
-    double _zoom;
-    double _zoomfactor;
 
-    // TODO: Must be better.
-    public double Zoom
+    public double Zoom { get; set; }
+}
+
+
+public static class CameraMatrix
+{
+    public static (double rx, double rz) GetRotationsPlane (ON.Plane plane)
     {
-        get => _zoom;
-        set {
-            if (_vp.IsParallelProjection) {
-                _zoomfactor = value/300;
-                if (_zoomfactor > -1) _zoom = value;
-                else _zoomfactor = -1;
-            } else {
-                _zoom = value;
-            }
-        }
+        var cosZ = Math.Acos (plane.ZAxis.Z);
+        // !!! Ne fonctionne pas en mode 2 points !!!
+        // Visiblement le CameraUp qui n'est pas perpendiculaire en mode 2 points ou plutôt toujour aligner sur le Z+
+        // Bref le probléme ne viens pas de ce calcul mais plutot de ne pas l'utiliser ou un autre en mode 2 points.
+        // var cosY = plane.ZAxis.Z != 0  ? Math.Acos (plane.XAxis.X) 
+        //          : Math.Acos (plane.ZAxis.Y); 
+        var cosY = Math.Acos (plane.XAxis.X); 
+
+        return (
+            plane.YAxis.Z < 0 ? -cosZ : cosZ,
+            plane.XAxis.Y < 0 ? -cosY : cosY
+        );
     }
 
-    /// <summary>
-    ///     Initialize the class before using it </summary>
-    /// <param name="target">
-    ///     The target point of the camera. </param>
-    public void Init (RD.RhinoViewport viewport, ON.Point3d target)
+    public static void Fill (ICameraMatrix cmat, ON.Plane plane, ON.Point3d target)
     {
-        _vp = viewport;
-        _vpinfo = new (viewport);
-        _target = new (target);
-        _vp.SetCameraTarget (_target, updateCameraLocation: false);
-        Reset ();
-    }
-
-    /// <summary>
-    ///     Recalculate the transforms property of this class from the viewport. </summary>
-    public void Reset ()
-    {
-        var plane = new ON.Plane (_vp.CameraLocation, _vp.CameraX, _vp.CameraY);
-        
         var cosZ = Math.Acos (plane.ZAxis.Z);
         var rx = plane.YAxis.Z < 0 ? -cosZ : cosZ;
-
+        
         var cosY = Math.Acos (plane.XAxis.X); 
         var rz = plane.XAxis.Y < 0 ? -cosY : cosY;
+        
+        // see GetRotationsPlane
+        // var (rx, rz) = GetRotationsPlane (plane);
 
-        var ntarget = new ON.Point3d (_target);
+        var ntarget = new ON.Point3d (target);
         var nplane  = new ON.Plane (plane);
 
         ntarget.Transform (_TurnXZ (0, -rz));
@@ -133,20 +107,16 @@ public class Camera
         nplane.Transform (_TurnXZ (0, -rz));
         nplane.Transform (_TurnXZ (-rx, 0));
 
-        PanX = nplane.OriginX - ntarget.X;
-        PanY = nplane.OriginY - ntarget.Y;
-        PanZ = nplane.OriginZ - ntarget.Z;
-        RotX = rx;
-        RotZ = rz;
-        PosX = _target.X;
-        PosY = _target.Y;
-        PosZ = _target.Z;
+        cmat.PanX = nplane.OriginX - ntarget.X;
+        cmat.PanY = nplane.OriginY - ntarget.Y;
+        cmat.PanZ = nplane.OriginZ - ntarget.Z;
+        cmat.RotX = rx;
+        cmat.RotZ = rz;
+        cmat.PosX = target.X;
+        cmat.PosY = target.Y;
+        cmat.PosZ = target.Z;
 
-        Zoom = 0;
-
-        _vpinfo.GetFrustum (out var left, out var right, out var bottom, out var top, out var near, out var far);
-        _initialSizeX  = new ON.Interval (left, right);
-        _initialSizeY  = new ON.Interval (top, bottom);
+        cmat.Zoom = 0;
         
         static ON.Transform _TurnXZ (double rotX, double rotZ)
         {
@@ -175,21 +145,145 @@ public class Camera
         }
     }
 
+    
+    /// <summary>
+    ///     Compute the transformation matrix. </summary>
+    // TODO: Add rotation for walk mode
+    public static void PanTurnMoveZoom (ON.Transform t, ICameraMatrix m, bool parallelProjection)
+    {
+        var cosX = Math.Cos(m.RotX);
+        var sinX = Math.Sin(m.RotX);
+        var cosZ = Math.Cos(m.RotZ);
+        var sinZ = Math.Sin(m.RotZ);
+
+        // vector X
+        t.M00 = cosZ;
+        t.M10 = sinZ;
+        t.M20 = 0d;
+
+        // vector Y
+        t.M01 = cosX * -sinZ;
+        t.M11 = cosX * cosZ;
+        t.M21 = sinX;
+
+        // vector Z
+        t.M02 = sinX * sinZ;
+        t.M12 = -sinX * cosZ;
+        t.M22 = cosX;
+
+        //      origin     panX*vecX      panY*vecY      panZ*vecZ ;
+        t.M03 = m.PosX + m.PanX*t.M00 + m.PanY*t.M01 + m.PanZ*t.M02;
+        t.M13 = m.PosY + m.PanX*t.M10 + m.PanY*t.M11 + m.PanZ*t.M12;
+        t.M23 = m.PosZ + m.PanX*t.M20 + m.PanY*t.M21 + m.PanZ*t.M22;
+
+        // vector taget to origin
+        var x = t.M03 - m.PosX;
+        var y = t.M13 - m.PosY;
+        var z = t.M23 - m.PosZ;
+
+        if (parallelProjection)
+        {
+            var _zoomfactor = m.Zoom < -1 ? -1 : m.Zoom;
+            // + t2o * zoom factor
+            t.M03 += x * _zoomfactor;
+            t.M13 += y * _zoomfactor;
+            t.M23 += z * _zoomfactor;
+        }
+        else
+        {
+            var length = Math.Sqrt (x*x + y*y + z*z);
+            // origin + (xyz for zoom=1) * zoom
+            t.M03 += x/length * m.Zoom;
+            t.M13 += y/length * m.Zoom;
+            t.M23 += z/length * m.Zoom;
+        }
+
+        // Perspectcive and global scale are not touch.
+    }
+}
+
+
+/// <summary>
+/// Provides utility functions to manipulate the camera in view. <br/>
+/// Before each use, this class must be initialized with the 'Init' function
+/// and the initial camera **MUST** be aligned with the horizon (i.e. the `RhinoViewport.CameraX.Z == 0`).
+/// the calculation of transformations is optimized in a single pass in <see cref="_PanTurnMoveZoom"/>
+/// and corresponds to the transformations:
+/// <code>
+///     Scale (camera-target * Zoom)
+///     * Translation (Pos[X|Y|Z])    // Pos[X|Y|Z] is the target point.
+///     * Rotation (RotZ, ZAxis)
+///     * Rotation (RotX, XAxis)
+///     * Translation (Pan[X|Y|Z])
+/// </code>
+/// </summary>
+public class LiveCamera : ICameraMatrix
+{
+    #nullable disable
+    RD.RhinoViewport _vp;
+    RO.ViewportInfo _vpinfo;
+    #nullable enable
+
+    ON.Transform _m = ON.Transform.Identity;
+    ON.Interval _initialSizeX;
+    ON.Interval _initialSizeY;
+
+    ON.Point3d _target;
+
+    public double PanX { get; set; }
+    public double PanY { get; set; }
+    public double PanZ { get; set; }
+
+    public double RotX { get; set; }
+    public double RotZ { get; set; }
+
+    public double PosX { get; set; }
+    public double PosY { get; set; }
+    public double PosZ { get; set; }
+
+    // TODO: Adapt the zoom factor to the size of views/scenes.
+    public double Zoom { get; set; }
+
+    /// <summary>
+    ///     Initialize the class before using it </summary>
+    /// <param name="target">
+    ///     The target point of the camera. </param>
+    public void Init (RD.RhinoViewport viewport, ON.Point3d target)
+    {
+        _vp = viewport;
+        _vpinfo = new (viewport);
+        _target = new (target);
+        _vp.SetCameraTarget (_target, updateCameraLocation: false);
+        Reset ();
+    }
+
+    /// <summary>
+    ///     Recalculate the transforms property of this class from the viewport. </summary>
+    public void Reset ()
+    {
+        var plane = new ON.Plane (_vp.CameraLocation, _vp.CameraX, _vp.CameraY);
+        
+        CameraMatrix.Fill (this, plane, _target);
+
+        _vpinfo.GetFrustum (out var left, out var right, out var bottom, out var top, out var near, out var far);
+        _initialSizeX  = new ON.Interval (left, right);
+        _initialSizeY  = new ON.Interval (top, bottom);
+    }
+
     /// <summary>
     ///     Apply transformations but not redraw the view. </summary>
     public void ApplyTransforms ()
     {
-        _PanTurnMoveZoom ();
+        var _zoomfactor = _PanTurnMoveZoom ();
 
-        // En vue parallele, la position de la camera et le Frustum n'est pas modifier.
-        // ??? Uniquement dans cam.csx, J'igniore pourquoi mais définir le Frustum change la position de la camera. ???
         if (_vp.IsParallelProjection)
         {
+            // var _zoomfactor = Zoom > 1 ? 1 : Zoom;
             _vpinfo.SetFrustum (
-                _initialSizeX.T0 * (1+_zoomfactor),
-                _initialSizeX.T1 * (1+_zoomfactor),
-                _initialSizeY.T1 * (1+_zoomfactor),
-                _initialSizeY.T0 * (1+_zoomfactor),
+                _initialSizeX.T0 * _zoomfactor,
+                _initialSizeX.T1 * _zoomfactor,
+                _initialSizeY.T1 * _zoomfactor,
+                _initialSizeY.T0 * _zoomfactor,
                 _vpinfo.FrustumNear,
                 _vpinfo.FrustumFar
             );
@@ -213,7 +307,7 @@ public class Camera
         _vpinfo.SetCameraUp (up);
         #endif
 
-        #if false // DEBUG // ??? Renvoie false même si tout semble fonctionné ???
+        #if false
         if (_vp.SetViewProjection (_vpinfo, updateTargetLocation: true)) RhinoApp.WriteLine ("SetViewProjection == false");
         #else
         _vp.SetViewProjection (_vpinfo, updateTargetLocation: true);
@@ -224,12 +318,14 @@ public class Camera
     /// <summary>
     ///     Compute the transformation matrix. </summary>
     // TODO: Add rotation for walk mode
-    void _PanTurnMoveZoom ()
+    double _PanTurnMoveZoom ()
     {
         var cosX = Math.Cos(RotX);
         var sinX = Math.Sin(RotX);
         var cosZ = Math.Cos(RotZ);
         var sinZ = Math.Sin(RotZ);
+
+        double _zoom;
 
         // vector X
         _m.M00 = cosZ;
@@ -245,41 +341,66 @@ public class Camera
         _m.M02 = sinX * sinZ;
         _m.M12 = -sinX * cosZ;
         _m.M22 = cosX;
-
-        // origin       panX*vecX    panY*vecY    panZ*vecZ ;
-        _m.M03 = PosX + PanX*_m.M00 + PanY*_m.M01 + PanZ*_m.M02;
-        _m.M13 = PosY + PanX*_m.M10 + PanY*_m.M11 + PanZ*_m.M12;
-        _m.M23 = PosZ + PanX*_m.M20 + PanY*_m.M21 + PanZ*_m.M22;
-
-        // vector taget to origin
-        var x = _m.M03 - PosX;
-        var y = _m.M13 - PosY;
-        var z = _m.M23 - PosZ;
-
+        
         if (_vp.IsParallelProjection)
         {
-            // + t2o * zoom factor
-            _m.M03 += x * _zoomfactor;
-            _m.M13 += y * _zoomfactor;
-            _m.M23 += z * _zoomfactor;
+            _zoom = Zoom < 0 
+                  ? 1+Math.Tanh (Zoom/300)
+                  : 1+Zoom/300;
+ 
+            // origin             panX*vecX           panY*vecY     panZ*vecZ 
+            _m.M03 = PosX + _zoom*PanX*_m.M00 + _zoom*PanY*_m.M01 + PanZ*_m.M02;
+            _m.M13 = PosY + _zoom*PanX*_m.M10 + _zoom*PanY*_m.M11 + PanZ*_m.M12;
+            _m.M23 = PosZ + _zoom*PanX*_m.M20 + _zoom*PanY*_m.M21 + PanZ*_m.M22;
         }
         else
         {
+            _zoom = Zoom;
+            
+            //       panX*vecX    panY*vecY    panZ*vecZ ;
+            _m.M03 = PanX*_m.M00 + PanY*_m.M01 + PanZ*_m.M02;
+            _m.M13 = PanX*_m.M10 + PanY*_m.M11 + PanZ*_m.M12;
+            _m.M23 = PanX*_m.M20 + PanY*_m.M21 + PanZ*_m.M22;
+        
+            // vector taget to camera origin
+            var x = _m.M03;
+            var y = _m.M13;
+            var z = _m.M23;
             var length = Math.Sqrt (x*x + y*y + z*z);
-            // origin + (xyz for zoom=1) * zoom
-            _m.M03 += x/length * _zoom;
-            _m.M13 += y/length * _zoom;
-            _m.M23 += z/length * _zoom;
+
+            //  cam origin + (xyz for zoom=1) * zoom
+            _m.M03 += PosX + x/length * Zoom;
+            _m.M13 += PosY + y/length * Zoom;
+            _m.M23 += PosZ + z/length * Zoom;
         }
 
         // Perspectcive and global scale are not touch.
+
+        return _zoom;
     }
+
+    #region Debug
+
+    public static void ShowDebugConduit (RD.RhinoViewport viewport)
+    {
+        CameraConduit.Show (viewport);
+    }
+
+    public static void HideDebugConduit ()
+    {
+        CameraConduit.Hide ();
+    }
+
+    #endregion
 }
 
 
 /// <summary>
 ///     For visual debugging (show camera with Grasshopper or native objects, change camera). </summary>
-public class CameraConduit : RD.DisplayConduit
+#if RHP
+file
+#endif
+class CameraConduit : RD.DisplayConduit
 {
     static CameraConduit? g_instance;
 
@@ -293,7 +414,7 @@ public class CameraConduit : RD.DisplayConduit
         g_instance.Enabled = true;
     }
 
-    public static void hide ()
+    public static void Hide ()
     {
         if (g_instance != null)
             g_instance.Enabled = false;

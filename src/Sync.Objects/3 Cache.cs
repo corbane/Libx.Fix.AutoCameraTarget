@@ -32,30 +32,30 @@
 
 using System;
 using System.Linq;
-using System.Text;
 using System.Collections.Generic;
+
+using ON = Rhino.Geometry;
+using RO = Rhino.DocObjects;
+using RhinoApp = Rhino.RhinoApp;
+using RhinoDoc = Rhino.RhinoDoc;
+
+
+#if RHP
+#if DEBUG
+using System.Text;
 using System.ComponentModel;
 using SD = System.Drawing;
 
 using EF = Eto.Forms;
 using ED = Eto.Drawing;
 
-using RH = Rhino;
-using ON = Rhino.Geometry;
-using RO = Rhino.DocObjects;
 using RD = Rhino.Display;
 using RUI = Rhino.UI;
-using RhinoApp = Rhino.RhinoApp;
-using RhinoDoc = Rhino.RhinoDoc;
 
-
-#if RHP
-
-using Libx.Fix.AutoCameraTarget.Ui;
 using Libx.Fix.AutoCameraTarget.Config;
-
+using Libx.Fix.AutoCameraTarget.Ui; // EtoHelpers to remove
+#endif
 namespace Libx.Fix.AutoCameraTarget.Sync;
-
 #endif
 
 
@@ -71,10 +71,7 @@ public class CacheOptions : Settings
     bool _displaybbox;
     public bool DebugDisplayBBox { get => _displaybbox; set { Set (ref _displaybbox, value); } }
 
-    public override bool Validate()
-    {
-        return true;
-    }
+    public override bool Validate() { return true; }
 }
 
 #endif
@@ -113,13 +110,6 @@ public static class Cache
 
     #region Start/Stop
 
-    static DocumentObserver _listener = new DocumentObserver (
-        onBeginDocument : _Clear,
-        onEndDocument   : _AppendDocument,
-        onAppendObject  : _Append,
-        onRemoveObject  : _Remove
-    );
-
     public static void Start ()
     {
         #if DEBUG
@@ -127,7 +117,10 @@ public static class Cache
         #endif
 
         _AppendDocument (RhinoDoc.ActiveDoc);
-        _listener.AttachEvents ();
+        DocumentObserver.OnBeginDocument += _Clear;
+        DocumentObserver.OnEndDocument   += _AppendDocument;
+        DocumentObserver.OnAppendObject  += _Append;
+        DocumentObserver.OnRemoveObject  += _Remove;
     }
 
     public static void Stop ()
@@ -137,7 +130,10 @@ public static class Cache
         _ClearDebugChanges ();
         #endif
 
-        _listener.DetachEvents ();
+        DocumentObserver.OnBeginDocument -= _Clear;
+        DocumentObserver.OnEndDocument   -= _AppendDocument;
+        DocumentObserver.OnAppendObject  -= _Append;
+        DocumentObserver.OnRemoveObject  -= _Remove;
         _Clear ();
     }
 
@@ -270,7 +266,8 @@ public static class Cache
     static void _Remove (Guid objectId)
     {
         #if DEBUG
-        _DecrementState (_cache[objectId].ObjectType);
+        if (_cache.ContainsKey (objectId))
+            _DecrementState (_cache[objectId].ObjectType);
         _DeferDebugChanges ();
         #endif
         
@@ -360,7 +357,7 @@ public static class Cache
 
     public static event OnCacheChangedHandler? OnCacheChanged;
 
-    static IdleRhinoEventGroup _debugeventgroup = new (_EmitDebugChanges);
+    static IdleQueueIncrement _debugeventgroup = new (_EmitDebugChanges);
 
     static void _EmitDebugChanges () { OnCacheChanged?.Invoke (); }
 
