@@ -19,6 +19,7 @@ using ED = Eto.Drawing;
 using EF = Eto.Forms;
 
 using RD = Rhino.Display;
+using RUI = Rhino.UI;
 
 
 #if RHP
@@ -55,6 +56,7 @@ public static class Cursor
 
     static SD.Rectangle _clientArea;
 
+    static float _dpiscale;
 
     public static ED.Point InitialCursorPosition => _initiaCursorPos;
 
@@ -62,18 +64,25 @@ public static class Cursor
     {
         _initiaCursorPos = new (position.X, position.Y);
         _clientArea = viewport.ParentView.ScreenRectangle;
+        _dpiscale = RUI.RhinoEtoApp.MainWindow.Screen.DPI / RUI.RhinoEtoApp.MainWindow.Screen.RealDPI;
     }
 
     public static void SetCursorPosition (ED.Point pos)
     {
-        EF.Mouse.Position = new (_clientArea.X + pos.X, _clientArea.Y + pos.Y);
+        EF.Mouse.Position = new (
+            (_clientArea.X + pos.X) * _dpiscale,
+            (_clientArea.Y + pos.Y) * _dpiscale
+        );
     }
 
     public static void SetLimitedCursorPosition (int X, int Y)
     {
         X = X < 0 ? 0 : X > _clientArea.Width ? _clientArea.Width : X;
         Y = Y < 0 ? 0 : Y > _clientArea.Height ? _clientArea.Height : Y;
-        EF.Mouse.Position = new (_clientArea.X + X, _clientArea.Y + Y);
+        EF.Mouse.Position = new (
+            (_clientArea.X + X)  * _dpiscale,
+            (_clientArea.Y + Y)  * _dpiscale
+        );
     }
 }
 

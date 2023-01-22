@@ -315,19 +315,22 @@ public class CPlaneRegistry : INotifyPropertyChanged, IDisposable
         DBG.CTOR ();
 
         _started = true;
-        RhinoApp.Idle += _OnIdle;
+        RhinoDoc.DocumentPropertiesChanged += _OnDocumentPropertiesChanged;
     }
 
     public void StopSync ()
     {
         DBG.CTOR ();
-
-        RhinoApp.Idle -= _OnIdle;
+        
+        RhinoDoc.DocumentPropertiesChanged -= _OnDocumentPropertiesChanged;
         _started = false;
     }
 
-    void _OnIdle (object sender, EventArgs e)
+    void _OnDocumentPropertiesChanged (object sender, EventArgs e)
+    // https://discourse.mcneel.com/t/cplanes-events/153395/2
     {
+        DBG.Log ();
+
         Update ();
     }
 

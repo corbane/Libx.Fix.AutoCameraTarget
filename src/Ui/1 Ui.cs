@@ -133,6 +133,8 @@ static class FormDrag
 
     public static bool InDrag => _started;
 
+    static float _dpiscale;
+
     static int _startX;
     static int _startY;
 
@@ -202,6 +204,7 @@ static class FormDrag
     {
         _started = true;
 
+        _dpiscale = RUI.RhinoEtoApp.MainWindow.Screen.DPI / RUI.RhinoEtoApp.MainWindow.Screen.RealDPI;
         _offsetX = 0;
         _offsetY = 0;
 
@@ -234,9 +237,8 @@ static class FormDrag
         }
         else
         {
-            _offsetX = message.ScreenX - _startX;
-            _offsetY = message.ScreenY - _startY;
-            // DBG.Log (""+_offsetX+" - "+_offsetY);
+            _offsetX = (int)(message.ScreenX * _dpiscale - _startX);
+            _offsetY = (int)(message.ScreenY * _dpiscale - _startY);
 
             if (_dragwindow != null)
             {
